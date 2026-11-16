@@ -697,6 +697,103 @@ def _fetch_ileague_persibo():
     return found
 
 
+
+def _fetch_berita_bojonegoro():
+    """Ambil berita Persibo secara otomatis dari kategori olahraga dan beranda BeritaBojonegoro.com."""
+    from urllib.parse import urljoin, urlparse
+    import html as _html
+
+    host = "beritabojonegoro.com"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    }
+    listing_pages = [
+        "https://beritabojonegoro.com/category/olahraga",
+        "https://beritabojonegoro.com/",
+    ]
+    for page_no in range(2, 6):
+        listing_pages.append(
+            "https://beritabojonegoro.com/category/olahraga?page={}".format(page_no)
+        )
+
+    found = []
+    seen_ids = set()
+
+    def _article_id(url):
+        match = re.search(r"/read/(\d+)-", urlparse(url).path, re.I)
+        return match.group(1) if match else None
+
+    for listing_url in listing_pages:
+        try:
+            if not _is_public_http_url(listing_url):
+                continue
+            response = requests.get(listing_url, headers=headers, timeout=(4, 9))
+            response.raise_for_status()
+            listing_soup = BeautifulSoup(response.text, "html.parser")
+        except Exception:
+            continue
+
+        candidates = {}
+        for anchor in listing_soup.find_all("a", href=True):
+            href = urljoin(listing_url, _html.unescape(anchor.get("href", "").strip()))
+            parsed = urlparse(href)
+            if parsed.netloc.lower() not in (host, "www." + host):
+                continue
+            article_id = _article_id(href)
+            if not article_id or article_id in seen_ids:
+                continue
+            title = " ".join(anchor.get_text(" ", strip=True).split())
+            candidates.setdefault(article_id, (href, title))
+
+        for article_id, (article_url, listing_title) in candidates.items():
+            try:
+                if not _is_public_http_url(article_url):
+                    continue
+                article_response = requests.get(
+                    article_url, headers=headers, timeout=(4, 9)
+                )
+                article_response.raise_for_status()
+                article_soup = BeautifulSoup(article_response.text, "html.parser")
+            except Exception:
+                continue
+
+            meta_title = article_soup.find("meta", property="og:title")
+            title = (
+                (meta_title.get("content", "").strip() if meta_title else "")
+                or listing_title
+            )
+            if not title and article_soup.title:
+                title = article_soup.title.get_text(" ", strip=True)
+            title = re.sub(r"\s*[|–-]\s*BeritaBojonegoro.*$", "", title, flags=re.I).strip()
+
+            main = article_soup.find("article") or article_soup.find("main") or article_soup
+            summary = " ".join(main.get_text(" ", strip=True).split())[:5000]
+            if not _is_persibo_relevant({"title": title, "summary": summary}):
+                continue
+
+            seen_ids.add(article_id)
+            published, published_parsed = _extract_article_published_date(article_url)
+            image = None
+            try:
+                image = _extract_article_thumbnail(article_url)
+            except Exception:
+                pass
+
+            found.append({
+                "title": title,
+                "link": article_url,
+                "source": "BeritaBojonegoro.com",
+                "published": published,
+                "summary": _clean_summary(summary[:420]),
+                "image": image,
+                "_published_parsed": published_parsed or time.gmtime(0),
+            })
+
+    return found
+
+
+
 def get_persibo_news(limit=40):
     """Ambil berita dari RSS penerbit secara paralel, ekstrak thumbnail, dan cache 30 detik."""
     global _NEWS_CACHE, _NEWS_CACHE_AT
@@ -739,6 +836,17 @@ def get_persibo_news(limit=40):
     try:
         inews_articles = _fetch_inews_bojonegoro()
         for article in inews_articles:
+            if article["link"] not in seen:
+                seen.add(article["link"])
+                collected.append(article)
+    except Exception:
+        pass
+
+    # Tambahkan berita Persibo dari BeritaBojonegoro.com melalui indeks kategori/beranda.
+    # Tidak ada artikel yang ditanam manual; seluruh item harus ditemukan dari situs penerbit.
+    try:
+        bojonegoro_articles = _fetch_berita_bojonegoro()
+        for article in bojonegoro_articles:
             if article["link"] not in seen:
                 seen.add(article["link"])
                 collected.append(article)
