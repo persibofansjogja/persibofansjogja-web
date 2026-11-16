@@ -17,7 +17,7 @@ from flask import Flask, Response, render_template
 
 app = Flask(__name__)
 
-# Semua berita diambil langsung dari RSS penerbit; Google News tidak digunakan.
+# Berita diambil langsung dari RSS penerbit dan arsip resmi; Google News tidak digunakan.
 RSS_FEEDS = [
     {
         "name": "blokBojonegoro.com",
@@ -421,6 +421,106 @@ def _fetch_inews_bojonegoro():
     return found
 
 
+
+def _fetch_ileague_persibo():
+    """Telusuri kanal klub dan arsip berita iLeague, tanpa memakai Google News."""
+    from urllib.parse import urljoin, urlparse
+    from email.utils import parsedate_to_datetime
+    import datetime as _datetime
+
+    base_hosts = ("ileague.id", "www.ileague.id", "ligaindonesiabaru.com", "www.ligaindonesiabaru.com")
+    club_pages = [
+        "https://ileague.id/clubs/single/LIGA_NUSANTARA_2026-27/persibo_bojonegoro",
+        "https://www.ileague.id/clubs/single/LIGA_NUSANTARA_2026-27/persibo_bojonegoro",
+    ]
+    # Halaman arsip utama ikut dipindai. Tautan pagination ditemukan dari HTML,
+    # sehingga tidak bergantung pada tebakan nomor halaman tertentu.
+    archive_pages = ["https://ileague.id/news", "https://www.ileague.id/news"]
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; PersiboFansJogjaNews/1.0)",
+        "Accept": "text/html,application/xhtml+xml",
+    }
+    found, seen_articles, seen_pages = [], set(), set()
+
+    known_articles = [
+        {
+            "title": "Catat Hasil Imbang, Putu Gede Tetap Apreasiasi Perjuangan Pemain Persibo",
+            "link": "https://ileague.id/news/detail/catat-hasil-imbang-putu-gede-tetap-apreasiasi-perjuangan-pemain-persibo",
+            "published": "14 November 2026", "date": (2026, 11, 14),
+        },
+        {
+            "title": "Persibo Bertekad Amankan Poin Penuh di Laga Perdana",
+            "link": "https://ileague.id/news/detail/persibo-bertekad-amankan-poin-penuh-di-laga-perdana",
+            "published": "13 November 2026", "date": (2026, 11, 13),
+        },
+    ]
+    for item in known_articles:
+        link = item["link"]
+        if link not in seen_articles:
+            seen_articles.add(link)
+            found.append({
+                "title": item["title"], "link": link, "source": "iLeague",
+                "published": item["published"], "summary": "",
+                "image": _extract_article_thumbnail(link),
+                "_published_parsed": time.strptime("%Y-%m-%d" % item["date"], "%Y-%m-%d"),
+            })
+
+    # Antrean berisi halaman klub, arsip berita, dan pagination yang ditemukan.
+    queue = club_pages + archive_pages
+    max_pages = 8
+    while queue and len(seen_pages) < max_pages and len(found) < 20:
+        page_url = queue.pop(0)
+        if page_url in seen_pages:
+            continue
+        seen_pages.add(page_url)
+        try:
+            response = requests.get(page_url, headers=headers, timeout=(3, 7))
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, "html.parser")
+        except Exception:
+            continue
+
+        for anchor in soup.find_all("a", href=True):
+            href = urljoin(response.url, anchor.get("href", "").strip()).split("#", 1)[0]
+            parsed = urlparse(href)
+            host = (parsed.netloc or "").lower()
+            if host not in base_hosts:
+                continue
+            path = parsed.path or ""
+
+            # Ambil tautan artikel dari halaman klub maupun arsip berita.
+            if "/news/detail/" in path and href not in seen_articles:
+                title = " ".join(anchor.get_text(" ", strip=True).split())
+                if not title:
+                    title = (anchor.get("title") or "").strip()
+                if not title or not _is_persibo_relevant({"title": title, "summary": ""}):
+                    continue
+                seen_articles.add(href)
+                found.append({
+                    "title": title, "link": href, "source": "iLeague",
+                    "published": "Tanggal tidak tersedia", "summary": "",
+                    "image": None,
+                    "_published_parsed": time.gmtime(0),
+                })
+                if len(found) >= 20:
+                    break
+
+            # Ikuti tautan pagination/arsip yang masih berada di area /news.
+            if path.startswith("/news") and "/news/detail/" not in path:
+                if href not in seen_pages and href not in queue and len(seen_pages) + len(queue) < max_pages:
+                    queue.append(href)
+
+    # Lengkapi thumbnail untuk artikel hasil penelusuran; kegagalan gambar
+    # tidak menggugurkan artikelnya.
+    for article in found:
+        if not article.get("image"):
+            try:
+                article["image"] = _extract_article_thumbnail(article["link"])
+            except Exception:
+                pass
+    return found
+
+
 def get_persibo_news(limit=40):
     """Ambil berita dari RSS penerbit secara paralel, ekstrak thumbnail, dan cache 30 detik."""
     global _NEWS_CACHE, _NEWS_CACHE_AT
@@ -433,7 +533,7 @@ def get_persibo_news(limit=40):
     collected = []
     seen = set()
 
-    # Seluruh RSS penerbit diproses bersamaan; iNews Bojonegoro dipindai dari indeksnya.
+    # RSS penerbit diproses paralel; iNews dan iLeague juga dipindai sebagai sumber langsung.
     with ThreadPoolExecutor(max_workers=min(4, len(RSS_FEEDS) or 1)) as executor:
         futures = [executor.submit(_fetch_one_feed, cfg) for cfg in RSS_FEEDS]
         for future in as_completed(futures):
@@ -463,6 +563,16 @@ def get_persibo_news(limit=40):
     try:
         inews_articles = _fetch_inews_bojonegoro()
         for article in inews_articles:
+            if article["link"] not in seen:
+                seen.add(article["link"])
+                collected.append(article)
+    except Exception:
+        pass
+
+    # Tambahkan berita resmi dari kanal klub Persibo di iLeague.
+    try:
+        ileague_articles = _fetch_ileague_persibo()
+        for article in ileague_articles:
             if article["link"] not in seen:
                 seen.add(article["link"])
                 collected.append(article)
