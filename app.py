@@ -42,22 +42,193 @@ RSS_FEEDS = [
 ]
 
 
-def _entry_date(entry):
-    """Format tanggal RSS ke format Indonesia; kosong jika tanggal tidak tersedia."""
-    raw_date = entry.get("published") or entry.get("updated")
-    if not raw_date:
-        return "Tanggal tidak tersedia"
+_MONTHS_ID = [
+    "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+    "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+]
+
+
+def _parse_published_value(value):
+    """Parse tanggal RSS/HTML (RFC 822, ISO-8601, atau format tanggal Indonesia)."""
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+
+    # Epoch seconds/milliseconds yang kadang dipakai metadata terstruktur.
+    if re.fullmatch(r"\d{10,13}", raw):
+        try:
+            stamp = int(raw[:10])
+            return datetime.fromtimestamp(stamp, tz=timezone.utc)
+        except (ValueError, OverflowError, OSError):
+            pass
+
+    # RFC 822/2822 (format tanggal RSS klasik).
     try:
-        dt = parsedate_to_datetime(raw_date)
+        dt = parsedate_to_datetime(raw)
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
-        months = [
-            "Januari", "Februari", "Maret", "April", "Mei", "Juni",
-            "Juli", "Agustus", "September", "Oktober", "November", "Desember"
-        ]
-        return f"{dt.day} {months[dt.month - 1]} {dt.year}"
+        return dt
     except (TypeError, ValueError, OverflowError):
-        return raw_date
+        pass
+
+    # ISO-8601 termasuk akhiran Z dan offset zona waktu.
+    try:
+        iso = raw.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(iso)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except (TypeError, ValueError, OverflowError):
+        pass
+
+    # Format Indonesia, misalnya 14 November 2026 atau 14 Nov 2026 19:30 WIB.
+    month_map = {
+        "jan": 1, "januari": 1, "feb": 2, "februari": 2,
+        "mar": 3, "maret": 3, "apr": 4, "april": 4,
+        "mei": 5, "jun": 6, "juni": 6, "jul": 7, "juli": 7,
+        "agu": 8, "agustus": 8, "sep": 9, "september": 9,
+        "okt": 10, "oktober": 10, "nov": 11, "november": 11,
+        "des": 12, "desember": 12,
+    }
+    match = re.search(r"\b(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})(?:\s+(\d{1,2}):(\d{2}))?", raw, re.I)
+    if match:
+        month = month_map.get(match.group(2).lower())
+        if month:
+            try:
+                return datetime(
+                    int(match.group(3)), month, int(match.group(1)),
+                    int(match.group(4) or 0), int(match.group(5) or 0),
+                    tzinfo=timezone.utc,
+                )
+            except ValueError:
+                pass
+    return None
+
+
+def _format_published_date(dt):
+    if not dt:
+        return "Tanggal tidak tersedia"
+    return f"{dt.day} {_MONTHS_ID[dt.month - 1]} {dt.year}"
+
+
+def _entry_date(entry):
+    """Format tanggal RSS ke bahasa Indonesia, termasuk RSS dengan tanggal ISO."""
+    raw_date = entry.get("published") or entry.get("updated") or entry.get("created")
+    dt = _parse_published_value(raw_date)
+    if not dt:
+        parsed = entry.get("published_parsed") or entry.get("updated_parsed")
+        if parsed:
+            try:
+                dt = datetime(*parsed[:6], tzinfo=timezone.utc)
+            except (TypeError, ValueError, OverflowError):
+                dt = None
+    return _format_published_date(dt)
+
+
+_ARTICLE_DATE_CACHE = {}
+_ARTICLE_DATE_CACHE_TTL = 6 * 60 * 60
+
+
+def _extract_article_published_date(article_url):
+    """Baca tanggal publikasi dari metadata artikel (Open Graph, JSON-LD, atau time)."""
+    now = time.time()
+    cached = _ARTICLE_DATE_CACHE.get(article_url)
+    if cached and now - cached[0] < _ARTICLE_DATE_CACHE_TTL:
+        return cached[1], cached[2]
+
+    current_url = article_url
+    result = ("Tanggal tidak tersedia", None)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; PersiboFansJogjaNews/1.0)",
+        "Accept": "text/html,application/xhtml+xml",
+    }
+    date_keys = (
+        ("property", "article:published_time"),
+        ("property", "og:published_time"),
+        ("name", "pubdate"),
+        ("name", "publishdate"),
+        ("name", "date"),
+        ("name", "parsely-pub-date"),
+        ("itemprop", "datePublished"),
+        ("itemprop", "dateCreated"),
+    )
+
+    try:
+        for _ in range(5):
+            if not _is_public_http_url(current_url):
+                break
+            response = requests.get(
+                current_url, headers=headers, timeout=(3, 6),
+                allow_redirects=False, stream=True,
+            )
+            if response.is_redirect or response.is_permanent_redirect:
+                location = response.headers.get("Location")
+                response.close()
+                if not location:
+                    break
+                current_url = urljoin(current_url, location)
+                continue
+            content_type = response.headers.get("Content-Type", "").lower()
+            if response.status_code != 200 or "html" not in content_type:
+                response.close()
+                break
+            chunks, total = [], 0
+            for chunk in response.iter_content(chunk_size=16384):
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > 1_200_000:
+                    break
+                chunks.append(chunk)
+            response.close()
+            soup = BeautifulSoup(b"".join(chunks), "html.parser")
+
+            candidates = []
+            for attr, key in date_keys:
+                tag = soup.find("meta", attrs={attr: key})
+                if tag:
+                    candidates.append(tag.get("content") or tag.get("datetime"))
+            time_tag = soup.find("time", datetime=True)
+            if time_tag:
+                candidates.append(time_tag.get("datetime"))
+            for tag in soup.find_all(attrs={"itemprop": "datePublished"}, limit=3):
+                candidates.append(tag.get("content") or tag.get("datetime") or tag.get_text(" ", strip=True))
+
+            # JSON-LD umum dipakai iLeague dan portal berita modern.
+            for script in soup.find_all("script", type="application/ld+json"):
+                raw_json = script.string or script.get_text()
+                try:
+                    import json
+                    data = json.loads(raw_json)
+                    stack = data if isinstance(data, list) else [data]
+                    while stack:
+                        node = stack.pop()
+                        if isinstance(node, dict):
+                            for key in ("datePublished", "dateCreated", "dateModified"):
+                                if node.get(key):
+                                    candidates.append(node[key])
+                            stack.extend(v for v in node.values() if isinstance(v, (dict, list)))
+                        elif isinstance(node, list):
+                            stack.extend(node)
+                except (ValueError, TypeError):
+                    continue
+
+            for candidate in candidates:
+                dt = _parse_published_value(candidate)
+                if dt:
+                    result = (_format_published_date(dt), dt.timetuple())
+                    break
+            break
+    except Exception:
+        pass
+
+    _ARTICLE_DATE_CACHE[article_url] = (now, result[0], result[1])
+    if len(_ARTICLE_DATE_CACHE) > 500:
+        for key in list(_ARTICLE_DATE_CACHE)[:100]:
+            _ARTICLE_DATE_CACHE.pop(key, None)
+    return result
 
 
 def _clean_summary(value):
@@ -357,6 +528,17 @@ def _fetch_inews_bojonegoro():
             image = _extract_article_thumbnail(canonical)
         except Exception:
             image = None
+        article_date, article_date_parsed = _extract_article_published_date(canonical)
+        if article_date != "Tanggal tidak tersedia":
+            published = article_date
+            published_parsed = article_date_parsed
+        elif published_parsed:
+            # Cadangan dari label waktu relatif yang disediakan indeks iNews.
+            try:
+                relative_dt = datetime(*published_parsed[:6], tzinfo=timezone.utc)
+                published = _format_published_date(relative_dt)
+            except (TypeError, ValueError, OverflowError):
+                pass
         found.append({
             "title": title,
             "link": canonical,
@@ -489,11 +671,12 @@ def _fetch_ileague_persibo():
                     continue
                 seen_articles.add(href)
                 seen_article_slugs.add(href_slug)
+                published, published_parsed = _extract_article_published_date(href)
                 found.append({
                     "title": title, "link": href, "source": "iLeague",
-                    "published": "Tanggal tidak tersedia", "summary": "",
+                    "published": published, "summary": "",
                     "image": None,
-                    "_published_parsed": time.gmtime(0),
+                    "_published_parsed": published_parsed or time.gmtime(0),
                 })
                 if len(found) >= 20:
                     break
