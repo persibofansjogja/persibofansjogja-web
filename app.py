@@ -260,7 +260,7 @@ _NEWS_CACHE = []
 _NEWS_CACHE_AT = 0.0
 _NEWS_CACHE_TTL = 30
 _NEWS_CACHE_LOCK = Lock()
-_MAX_OG_LOOKUPS = 10
+_MAX_OG_LOOKUPS = 12  # Prioritaskan thumbnail WhatsApp untuk 12 berita terbaru.
 
 
 def _fetch_one_feed(feed_config):
@@ -281,7 +281,7 @@ def _fetch_one_feed(feed_config):
 
 
 def _og_image_for_article(article):
-    """Fallback metadata gambar artikel jika RSS tidak membawa thumbnail."""
+    """Ambil gambar Open Graph yang biasanya dipakai sebagai pratinjau WhatsApp."""
     return _extract_article_thumbnail(article["link"])
 
 
@@ -355,21 +355,25 @@ def get_persibo_news(limit=40):
     )
     selected = collected[:limit]
 
-    # RSS kadang tidak menyertakan gambar. Coba metadata artikel untuk beberapa
-    # berita teratas yang belum memiliki gambar, dengan jumlah request dibatasi.
-    missing = [item for item in selected if not item.get("image")][:_MAX_OG_LOOKUPS]
-    if missing:
+    # Prioritaskan og:image halaman artikel untuk berita terbaru.
+    # WhatsApp umumnya menggunakan og:image sebagai gambar pratinjau tautan.
+    # Jika metadata tidak tersedia, gambar dari RSS tetap dipakai sebagai cadangan.
+    og_candidates = selected[:_MAX_OG_LOOKUPS]
+    if og_candidates:
         with ThreadPoolExecutor(max_workers=4) as executor:
             future_map = {
                 executor.submit(_og_image_for_article, item): item
-                for item in missing
+                for item in og_candidates
             }
             for future in as_completed(future_map):
                 item = future_map[future]
                 try:
-                    item["image"] = future.result()
+                    og_image = future.result()
+                    if og_image:
+                        item["image"] = og_image
                 except Exception:
-                    item["image"] = None
+                    # Pertahankan gambar RSS jika pengambilan metadata gagal.
+                    pass
 
     # Hilangkan field internal sebelum dikirim ke template.
     for item in selected:
