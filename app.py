@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from email.utils import parsedate_to_datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
@@ -302,6 +302,101 @@ def _is_persibo_relevant(entry):
     return has_bojonegoro and any(term in text for term in football_terms)
 
 
+
+def _relative_inews_time(text):
+    """Ubah label relatif pada indeks iNews (mis. '2 hari lalu') menjadi waktu perkiraan."""
+    from re import search
+    match = search(r"(\d+)\s*(menit|jam|hari|minggu|bulan)\s+lalu", text.lower())
+    if not match:
+        return None
+    amount = int(match.group(1))
+    unit = match.group(2)
+    seconds = {
+        "menit": 60,
+        "jam": 3600,
+        "hari": 86400,
+        "minggu": 7 * 86400,
+        "bulan": 30 * 86400,
+    }[unit]
+    return time.gmtime(time.time() - amount * seconds)
+
+
+def _fetch_inews_bojonegoro():
+    """Temukan berita Persibo dari indeks resmi iNews Bojonegoro, tanpa Google News."""
+    from urllib.parse import urljoin, urlparse
+    pages = [
+        "https://bojonegoro.inews.id/indeks/olahraga/all",
+        "https://bojonegoro.inews.id/indeks/all/all",
+    ]
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; PersiboFansJogjaNews/1.0)",
+        "Accept": "text/html,application/xhtml+xml",
+    }
+    found = []
+    seen = set()
+
+    for page_url in pages:
+        try:
+            response = requests.get(page_url, headers=headers, timeout=(3, 7))
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, "html.parser")
+        except requests.RequestException:
+            continue
+        except Exception:
+            continue
+
+        for anchor in soup.find_all("a", href=True):
+            href = urljoin(page_url, anchor.get("href", "").strip())
+            parsed = urlparse(href)
+            # Ambil hanya halaman artikel iNews Bojonegoro, bukan tautan navigasi.
+            if parsed.netloc.lower() not in ("bojonegoro.inews.id", "www.bojonegoro.inews.id"):
+                continue
+            if not re.search(r"/(?:amp|read)/\d+/", parsed.path):
+                continue
+
+            link = href.split("#", 1)[0]
+            if link in seen:
+                continue
+
+            listing_text = " ".join(anchor.get_text(" ", strip=True).split())
+            title = re.sub(
+                r"^(?:Olahraga|Bojonegoro|Jatim|Nasional|Ekbis|Lifestyle|Wisata dan Religi)\s+"
+                r"\d+\s+(?:menit|jam|hari|minggu|bulan)\s+lalu\s+",
+                "",
+                listing_text,
+                flags=re.IGNORECASE,
+            ).strip()
+
+            if not title:
+                title = listing_text
+            entry = {"title": title, "summary": ""}
+            if not _is_persibo_relevant(entry):
+                continue
+
+            seen.add(link)
+            published_parsed = _relative_inews_time(listing_text)
+            image = _extract_article_thumbnail(link)
+
+            found.append({
+                "title": title,
+                "link": link,
+                "source": "iNews Bojonegoro",
+                "published": "Tanggal tidak tersedia",
+                "summary": "",
+                "image": image,
+                "_published_parsed": published_parsed or time.gmtime(0),
+            })
+
+            # Cukup ambil beberapa artikel terbaru agar request ke penerbit tetap terbatas.
+            if len(found) >= 12:
+                break
+
+        if len(found) >= 12:
+            break
+
+    return found
+
+
 def get_persibo_news(limit=40):
     """Ambil berita dari RSS penerbit secara paralel, ekstrak thumbnail, dan cache 30 detik."""
     global _NEWS_CACHE, _NEWS_CACHE_AT
@@ -314,7 +409,7 @@ def get_persibo_news(limit=40):
     collected = []
     seen = set()
 
-    # Seluruh RSS penerbit diproses bersamaan.
+    # Seluruh RSS penerbit diproses bersamaan; iNews Bojonegoro dipindai dari indeksnya.
     with ThreadPoolExecutor(max_workers=min(4, len(RSS_FEEDS) or 1)) as executor:
         futures = [executor.submit(_fetch_one_feed, cfg) for cfg in RSS_FEEDS]
         for future in as_completed(futures):
@@ -338,6 +433,17 @@ def get_persibo_news(limit=40):
                     "image": _entry_image(entry),
                     "_published_parsed": entry.get("published_parsed") or entry.get("updated_parsed"),
                 })
+
+    # Tambahkan berita iNews Bojonegoro dari indeks kanal Olahraga dan indeks umum.
+    # Sumber ini tidak memakai Google News dan difilter khusus untuk Persibo/Bojonegoro.
+    try:
+        inews_articles = _fetch_inews_bojonegoro()
+        for article in inews_articles:
+            if article["link"] not in seen:
+                seen.add(article["link"])
+                collected.append(article)
+    except Exception:
+        pass
 
     # Urutkan terbaru lebih dulu bila tanggal RSS tersedia.
     collected.sort(
