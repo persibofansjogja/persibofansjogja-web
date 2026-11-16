@@ -4,123 +4,141 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#101010">
-  <meta name="description" content="Persibo Fans Jogja — ruang berkumpul, bergerak, dan bersuara untuk Persibo Bojonegoro di Daerah Istimewa Yogyakarta.">
-  <title>Persibo Fans Jogja — Satu Hati, Satu Laskar</title>
+  <meta name="description" content="Persibo Fans Jogja — komunitas pendukung Persibo Bojonegoro di Daerah Istimewa Yogyakarta. Satu tribun, satu suara, satu kebanggaan.">
+  <title>Persibo Fans Jogja — Satu Tribun, Satu Suara</title>
+  <link rel="icon" type="image/png" href="LogoPFJ.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <script src="script.js" defer></script>
 </head>
 <body>
   <div class="noise" aria-hidden="true"></div>
   <header class="site-header">
-    <a class="brand" href="#beranda" aria-label="Persibo Fans Jogja - Beranda">
-      <img src="LogoPFJ.png" alt="Logo Persibo Fans Jogja" class="brand-logo">
-      <span class="brand-name">PERSIBO FANS <b>JOGJA</b></span>
-    </a>
-    <button class="menu-toggle" aria-label="Buka menu" aria-expanded="false" aria-controls="main-nav">
-      <span></span><span></span><span></span>
-    </button>
-    <nav class="main-nav" id="main-nav">
-      <a href="#beranda" class="nav-link active">Beranda</a>
-      <a href="#tentang" class="nav-link">Tentang Kami</a>
-      <a href="#aktivitas" class="nav-link">Aktivitas</a>
-      <a href="#bergabung" class="nav-link nav-cta">Gabung PFJ <span>↗</span></a>
-    </nav>
+    <div class="container nav-wrap">
+      <a class="brand" href="#beranda" aria-label="Persibo Fans Jogja, beranda">
+        <img src="LogoPFJ.png" alt="Logo Persibo Fans Jogja" class="brand-logo">
+        <span class="brand-name">PERSIBO FANS <b>JOGJA</b></span>
+      </a>
+
+      <button class="menu-toggle" aria-label="Buka menu navigasi" aria-expanded="false" aria-controls="primary-nav">
+        <span></span><span></span><span></span>
+      </button>
+
+      <nav class="nav-links" id="primary-nav" aria-label="Navigasi utama">
+        <a href="#beranda" class="nav-link active">Beranda</a>
+        <a href="#tentang" class="nav-link">Tentang</a>
+        <a href="#nilai" class="nav-link">Semangat Kami</a>
+        <a href="#gabung" class="nav-link nav-cta">Gabung Komunitas <span>↗</span></a>
+      </nav>
+    </div>
   </header>
 
   <main>
     <section class="hero" id="beranda">
-      <div class="hero-grid"></div>
-      <div class="hero-content">
-        <div class="eyebrow"><span class="live-dot"></span> BOJONEGORO × YOGYAKARTA</div>
-        <h1>SATU HATI.<br><span>SATU LASKAR.</span></h1>
-        <p class="hero-lead">Jauh dari rumah bukan alasan untuk berhenti bersuara. Kami adalah keluarga Persibo yang tumbuh, berkumpul, dan berjuang dari Daerah Istimewa Yogyakarta.</p>
-        <div class="hero-actions">
-          <a href="#tentang" class="button button-primary">KENALI KAMI <span>↘</span></a>
-          <a href="#bergabung" class="text-link">Jadi bagian dari kami <span>→</span></a>
+      <div class="hero-grid container">
+        <div class="hero-copy">
+          <div class="eyebrow"><span class="live-dot"></span> BOJONEGORO × YOGYAKARTA</div>
+          <h1>SATU TRIBUN.<br><span>SATU SUARA.</span></h1>
+          <p class="hero-lead">Jauh dari rumah, dekat dalam satu rasa. Kami adalah keluarga pendukung Persibo Bojonegoro yang tumbuh dan bersuara dari Daerah Istimewa Yogyakarta.</p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="https://chat.whatsapp.com/Ba0IJp7GP4T3P2ITqS2ExA?s=cl&amp;p=a&amp;iam=2" target="_blank" rel="noopener noreferrer">Gabung bersama kami <span>↗</span></a>
+            <a class="text-link" href="#tentang">Kenali PFJ <span>↓</span></a>
+          </div>
+          <div class="hero-footnote"><span class="footline"></span> BERDIRI BERSAMA • MENDUKUNG TANPA BATAS</div>
         </div>
-        <div class="hero-meta">
-          <div><strong>1</strong><span>SEMANGAT</span></div>
-          <i></i>
-          <div><strong>2</strong><span>KOTA</span></div>
-          <i></i>
-          <div><strong>∞</strong><span>LOYALITAS</span></div>
+        <div class="hero-visual" aria-label="Identitas Persibo Fans Jogja">
+          <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>
+          <div class="visual-glow"></div>
+          <div class="visual-card">
+            <div class="visual-top"><span>PFJ / SUPPORTER CULTURE</span><span>001—ID</span></div>
+            <img src="LogoPFJ.png" alt="Logo Persibo Fans Jogja" class="hero-logo">
+            <div class="visual-bottom"><strong>ORANGE<br>IS OUR ENERGY.</strong><span>EST. / JOGJA<br>FOR PERSIBO</span></div>
+          </div>
+          <span class="floating-tag tag-top">LOYALTY // PRIDE</span>
+          <span class="floating-tag tag-bottom">#PERSIBOFANSJOGJA</span>
+          <div class="crosshair crosshair-a">+</div><div class="crosshair crosshair-b">+</div>
         </div>
       </div>
-      <div class="hero-art" aria-hidden="true">
-        <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>
-        <div class="crest-wrap"><img src="LogoPFJ.png" alt=""></div>
-        <div class="vertical-label">PERSIBO FANS JOGJA / EST. WITH PRIDE</div>
-        <div class="art-cross">✳</div>
-      </div>
-      <div class="hero-bottom"><span>01 / 03</span><span>SCROLL UNTUK MENJELAJAH</span><span class="scroll-line"></span></div>
+      <div class="hero-ticker" aria-hidden="true"><div class="ticker-track"><span>PERSIBO BOJONEGORO</span><i>✳</i><span>PERSIBO FANS JOGJA</span><i>✳</i><span>ONE FAMILY ONE PRIDE</span><i>✳</i><span>PERSIBO BOJONEGORO</span><i>✳</i><span>PERSIBO FANS JOGJA</span><i>✳</i></div></div>
     </section>
 
-    <section class="ticker" aria-label="Slogan komunitas">
-      <div class="ticker-track"><span>SEKALI LASKAR</span><b>✳</b><span>TETAP LASKAR</span><b>✳</b><span>BOJONEGORO DI HATI</span><b>✳</b><span>JOGJA MENYERTAI</span><b>✳</b><span>SEKALI LASKAR</span><b>✳</b><span>TETAP LASKAR</span><b>✳</b></div>
-    </section>
-
-    <section class="about section-pad" id="tentang">
-      <div class="section-index">01 <span>— TENTANG KAMI</span></div>
-      <div class="about-layout">
-        <div>
+    <section class="intro section-pad" id="tentang">
+      <div class="container intro-grid">
+        <div class="section-index">01 / TENTANG KAMI</div>
+        <div class="intro-content">
           <p class="kicker">LEBIH DARI SEKADAR DUKUNGAN</p>
-          <h2>DI MANA PUN<br>KAMI <em>BERDIRI,</em><br>PERSIBO DI HATI.</h2>
+          <h2>SEJAUH APA PUN<br>LANGKAH KITA, <span>MERAH PUTIH</span><br>SELALU DI HATI.</h2>
+          <div class="intro-bottom">
+            <p>Persibo Fans Jogja (PFJ) adalah komunitas pendukung klub sepak bola Persibo Bojonegoro yang berdomisili di Daerah Istimewa Yogyakarta. Kami hadir sebagai ruang untuk berkumpul, menjaga persaudaraan, dan menyalurkan dukungan bagi Laskar Angling Dharma.</p>
+            <div class="stamp"><span>PFJ</span><small>ONE FAMILY<br>ONE PRIDE</small></div>
+          </div>
         </div>
-        <div class="about-copy">
-          <p class="large-copy">Persibo Fans Jogja adalah komunitas pendukung Persibo Bojonegoro yang berdomisili di Daerah Istimewa Yogyakarta.</p>
-          <p>Berangkat dari kecintaan yang sama, kami hadir sebagai ruang untuk menjaga persaudaraan, merawat identitas, dan menyalurkan dukungan untuk Laskar Angling Dharma. Berbeda tempat tinggal, tetap satu kebanggaan.</p>
-          <a href="#bergabung" class="arrow-link">KENALI KELUARGA PFJ <span>↗</span></a>
+      </div>
+    </section>
+
+    <section class="values section-pad" id="nilai">
+      <div class="container">
+        <div class="values-heading">
+          <div><p class="kicker">02 / IDENTITAS KAMI</p><h2>BERBEDA KOTA.<br><span>SATU CERITA.</span></h2></div>
+          <p class="values-note">Dibangun oleh rasa memiliki. Dikuatkan oleh persaudaraan. Selalu ada untuk Persibo.</p>
+        </div>
+        <div class="value-grid">
+          <article class="value-card">
+            <span class="card-number">01</span><div class="value-icon">✳</div>
+            <h3>LOYALITAS</h3><p>Dukungan yang tumbuh dari hati, dalam situasi apa pun dan di mana pun kami berada.</p>
+            <span class="card-line"></span>
+          </article>
+          <article class="value-card featured">
+            <span class="card-number">02</span><div class="value-icon">◎</div>
+            <h3>PERSAUDARAAN</h3><p>Merangkul sesama perantau dan pendukung Persibo dalam satu keluarga besar.</p>
+            <span class="card-line"></span>
+          </article>
+          <article class="value-card">
+            <span class="card-number">03</span><div class="value-icon">↗</div>
+            <h3>KEBERSAMAAN</h3><p>Menciptakan ruang positif untuk bertemu, berbagi cerita, dan bergerak bersama.</p>
+            <span class="card-line"></span>
+          </article>
         </div>
       </div>
-      <div class="values-row">
-        <div class="value-card"><span>01 / SOLIDARITAS</span><strong>BERSAMA<br>LEBIH KUAT.</strong><p>Menjaga rasa persaudaraan di dalam dan di luar tribun.</p></div>
-        <div class="value-card"><span>02 / IDENTITAS</span><strong>AKAR BOJONEGORO,<br>JIWA JOGJA.</strong><p>Membawa kebanggaan daerah ke mana pun langkah membawa.</p></div>
-        <div class="value-card"><span>03 / LOYALITAS</span><strong>SELALU<br>BERSUARA.</strong><p>Dukungan yang tumbuh dari hati, bukan sekadar hasil akhir.</p></div>
+    </section>
+
+    <section class="join-section section-pad" id="gabung">
+      <div class="container join-panel">
+        <div class="join-decoration">PFJ<span>✳</span></div>
+        <div class="join-content">
+          <p class="kicker">03 / JADI BAGIAN DARI KAMI</p>
+          <h2>TRIBUN INI<br>BELUM LENGKAP<br><span>TANPA KAMU.</span></h2>
+          <p>Punya semangat yang sama untuk Persibo? Mari terhubung, saling mengenal, dan tumbuh bersama Persibo Fans Jogja.</p>
+          <a class="button button-dark" href="https://chat.whatsapp.com/Ba0IJp7GP4T3P2ITqS2ExA?s=cl&amp;p=a&amp;iam=2" target="_blank" rel="noopener noreferrer">Masuk grup WhatsApp <span>↗</span></a>
+        </div>
+        <div class="join-side"><span>FROM JOGJA</span><b>WITH<br>PRIDE.</b><span>FOR PERSIBO — ALWAYS</span></div>
       </div>
     </section>
 
-    <section class="statement">
-      <div class="statement-mark">“</div>
-      <p>JARAK HANYA SOAL PETA.<br><span>LOYALITAS TAK PUNYA BATAS.</span></p>
-      <div class="statement-foot"><span>PERSIBO FANS JOGJA</span><span>BOJONEGORO — YOGYAKARTA</span></div>
-    </section>
-
-    <section class="activities section-pad" id="aktivitas">
-      <div class="section-index">02 <span>— RUANG GERAK</span></div>
-      <div class="activities-head">
-        <div><p class="kicker">SATU KOMUNITAS, BANYAK CERITA</p><h2>INI CARA KAMI<br><em>BERGERAK.</em></h2></div>
-        <p class="activities-intro">Dari layar pertandingan hingga pertemuan langsung, semangat Laskar selalu punya tempat untuk dirayakan.</p>
-      </div>
-      <div class="activity-list">
-        <article class="activity-item"><div class="activity-number">01</div><div><h3>NONTON BARENG</h3><p>Merayakan setiap pertandingan Persibo bersama keluarga PFJ.</p></div><span class="activity-icon">↗</span></article>
-        <article class="activity-item"><div class="activity-number">02</div><div><h3>KOPDAR & SILATURAHMI</h3><p>Mempererat persaudaraan dan membuka ruang untuk anggota baru.</p></div><span class="activity-icon">↗</span></article>
-        <article class="activity-item"><div class="activity-number">03</div><div><h3>AKSI KOMUNITAS</h3><p>Menghadirkan kegiatan positif dan kontribusi nyata di sekitar kita.</p></div><span class="activity-icon">↗</span></article>
-      </div>
-      <p class="small-note">* Informasi agenda dan kegiatan terbaru akan diumumkan melalui kanal resmi komunitas.</p>
-    </section>
-
-    <section class="join" id="bergabung">
-      <div class="join-glow"></div>
-      <div class="join-inner">
-        <p class="kicker">TEMPATMU ADA DI SINI</p>
-        <h2>SUARAMU<br><span>BERARTI.</span></h2>
-        <p>Punya darah Bojonegoro, sedang merantau di Jogja, atau sekadar punya cinta yang sama untuk Persibo? Mari saling kenal dan tumbuh bersama.</p>
-        <a class="button button-light" href="https://instagram.com/" target="_blank" rel="noopener noreferrer">HUBUNGI KAMI <span>↗</span></a>
-        <span class="join-stamp">ONCE LASKAR<br>ALWAYS LASKAR</span>
+    <section class="social-section">
+      <div class="container social-wrap">
+        <div><p class="kicker">IKUTI PERJALANAN KAMI</p><h2>STAY CONNECTED<span>.</span></h2></div>
+        <div class="social-links">
+          <a href="https://www.instagram.com/persibofansjogja?psln=NGFscGllN3RwYWxv" target="_blank" rel="noopener noreferrer"><span>INSTAGRAM</span><b>↗</b></a>
+          <a href="https://vm.tiktok.com/ZS9fW9yH6TXJe-hnC2W/" target="_blank" rel="noopener noreferrer"><span>TIKTOK</span><b>↗</b></a>
+          <a href="https://chat.whatsapp.com/Ba0IJp7GP4T3P2ITqS2ExA?s=cl&amp;p=a&amp;iam=2" target="_blank" rel="noopener noreferrer"><span>WHATSAPP</span><b>↗</b></a>
+        </div>
       </div>
     </section>
   </main>
 
   <footer class="site-footer">
-    <div class="footer-top">
-      <a class="brand footer-brand" href="#beranda"><img src="LogoPFJ.png" alt="Logo Persibo Fans Jogja" class="brand-logo"><span class="brand-name">PERSIBO FANS <b>JOGJA</b></span></a>
-      <p>Jauh di mata, dekat dalam satu suara.<br>Persaudaraan tanpa batas, dukungan tanpa jeda.</p>
+    <div class="container footer-main">
+      <a class="brand footer-brand" href="#beranda">
+        <img src="LogoPFJ.png" alt="" class="brand-logo">
+        <span class="brand-name">PERSIBO FANS <b>JOGJA</b></span>
+      </a>
+      <p>Satu tribun, satu suara.<br>Salam hangat dari Yogyakarta untuk Bojonegoro.</p>
       <a href="#beranda" class="back-top">KEMBALI KE ATAS ↑</a>
     </div>
-    <div class="footer-bottom"><span>© <span id="year"></span> Persibo Fans Jogja. All rights reserved.</span><span>MADE WITH PRIDE <b>✳</b> FOR LASKAR</span></div>
+    <div class="container footer-bottom"><span>© <span id="year"></span> Persibo Fans Jogja. All rights reserved.</span><span>MADE WITH <b>✳</b> IN YOGYAKARTA</span></div>
   </footer>
-  <script src="script.js"></script>
 </body>
 </html>
