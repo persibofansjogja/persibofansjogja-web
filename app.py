@@ -421,9 +421,9 @@ def _extract_article_thumbnail(article_url):
 # Cache berita singkat seperti mekanisme pada website referensi.
 _NEWS_CACHE = []
 _NEWS_CACHE_AT = 0.0
-_NEWS_CACHE_TTL = 30
+_NEWS_CACHE_TTL = 300  # Simpan hasil scraping 5 menit untuk mempercepat kunjungan berikutnya.
 _NEWS_CACHE_LOCK = Lock()
-_MAX_OG_LOOKUPS = 12  # Prioritaskan thumbnail WhatsApp untuk 12 berita terbaru.
+_MAX_OG_LOOKUPS = 6  # Batasi permintaan gambar eksternal agar halaman lebih cepat.  # Prioritaskan thumbnail WhatsApp untuk 12 berita terbaru.
 
 
 def _fetch_one_feed(feed_config):
@@ -699,7 +699,7 @@ def _fetch_ileague_persibo():
 
 
 def _fetch_berita_bojonegoro():
-    """Ambil berita Persibo secara otomatis dari kategori olahraga dan beranda BeritaBojonegoro.com."""
+    """Ambil berita Persibo dari indeks BeritaBojonegoro secara paralel."""
     from urllib.parse import urljoin, urlparse
     import html as _html
 
@@ -711,87 +711,89 @@ def _fetch_berita_bojonegoro():
     listing_pages = [
         "https://beritabojonegoro.com/category/olahraga",
         "https://beritabojonegoro.com/",
+        "https://beritabojonegoro.com/category/olahraga?page=2",
     ]
-    for page_no in range(2, 6):
-        listing_pages.append(
-            "https://beritabojonegoro.com/category/olahraga?page={}".format(page_no)
-        )
+
+    def fetch_listing(url):
+        try:
+            if not _is_public_http_url(url):
+                return url, None
+            response = requests.get(url, headers=headers, timeout=(2, 5))
+            response.raise_for_status()
+            return url, BeautifulSoup(response.text, "html.parser")
+        except Exception:
+            return url, None
+
+    candidates = {}
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = [executor.submit(fetch_listing, url) for url in listing_pages]
+        for future in as_completed(futures):
+            listing_url, soup = future.result()
+            if soup is None:
+                continue
+            for anchor in soup.find_all("a", href=True):
+                href = urljoin(listing_url, _html.unescape(anchor.get("href", "").strip()))
+                parsed = urlparse(href)
+                if parsed.netloc.lower() not in (host, "www." + host):
+                    continue
+                match = re.search(r"/read/(\d+)-", parsed.path, re.I)
+                if not match:
+                    continue
+                article_id = match.group(1)
+                candidates.setdefault(
+                    article_id,
+                    (href, " ".join(anchor.get_text(" ", strip=True).split()))
+                )
+
+    def fetch_article(article_id, article_url, listing_title):
+        try:
+            if not _is_public_http_url(article_url):
+                return None
+            response = requests.get(article_url, headers=headers, timeout=(2, 5))
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, "html.parser")
+        except Exception:
+            return None
+
+        meta_title = soup.find("meta", property="og:title")
+        title = (meta_title.get("content", "").strip() if meta_title else "") or listing_title
+        if not title and soup.title:
+            title = soup.title.get_text(" ", strip=True)
+        title = re.sub(r"\s*[|–-]\s*BeritaBojonegoro.*$", "", title, flags=re.I).strip()
+
+        main = soup.find("article") or soup.find("main") or soup
+        summary = " ".join(main.get_text(" ", strip=True).split())[:3500]
+        if not _is_persibo_relevant({"title": title, "summary": summary}):
+            return None
+
+        published, published_parsed = _extract_article_published_date(article_url)
+        # Gambar diambil belakangan hanya untuk berita terpilih, bukan setiap artikel.
+        return {
+            "title": title,
+            "link": article_url,
+            "source": "BeritaBojonegoro.com",
+            "published": published,
+            "summary": _clean_summary(summary[:420]),
+            "image": None,
+            "_published_parsed": published_parsed or time.gmtime(0),
+        }
 
     found = []
-    seen_ids = set()
-
-    def _article_id(url):
-        match = re.search(r"/read/(\d+)-", urlparse(url).path, re.I)
-        return match.group(1) if match else None
-
-    for listing_url in listing_pages:
-        try:
-            if not _is_public_http_url(listing_url):
-                continue
-            response = requests.get(listing_url, headers=headers, timeout=(4, 9))
-            response.raise_for_status()
-            listing_soup = BeautifulSoup(response.text, "html.parser")
-        except Exception:
-            continue
-
-        candidates = {}
-        for anchor in listing_soup.find_all("a", href=True):
-            href = urljoin(listing_url, _html.unescape(anchor.get("href", "").strip()))
-            parsed = urlparse(href)
-            if parsed.netloc.lower() not in (host, "www." + host):
-                continue
-            article_id = _article_id(href)
-            if not article_id or article_id in seen_ids:
-                continue
-            title = " ".join(anchor.get_text(" ", strip=True).split())
-            candidates.setdefault(article_id, (href, title))
-
-        for article_id, (article_url, listing_title) in candidates.items():
+    # Batasi detail artikel per kunjungan agar situs sumber tidak dibebani.
+    selected_candidates = list(candidates.items())[:18]
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        futures = [
+            executor.submit(fetch_article, article_id, url, title)
+            for article_id, (url, title) in selected_candidates
+        ]
+        for future in as_completed(futures):
             try:
-                if not _is_public_http_url(article_url):
-                    continue
-                article_response = requests.get(
-                    article_url, headers=headers, timeout=(4, 9)
-                )
-                article_response.raise_for_status()
-                article_soup = BeautifulSoup(article_response.text, "html.parser")
-            except Exception:
-                continue
-
-            meta_title = article_soup.find("meta", property="og:title")
-            title = (
-                (meta_title.get("content", "").strip() if meta_title else "")
-                or listing_title
-            )
-            if not title and article_soup.title:
-                title = article_soup.title.get_text(" ", strip=True)
-            title = re.sub(r"\s*[|–-]\s*BeritaBojonegoro.*$", "", title, flags=re.I).strip()
-
-            main = article_soup.find("article") or article_soup.find("main") or article_soup
-            summary = " ".join(main.get_text(" ", strip=True).split())[:5000]
-            if not _is_persibo_relevant({"title": title, "summary": summary}):
-                continue
-
-            seen_ids.add(article_id)
-            published, published_parsed = _extract_article_published_date(article_url)
-            image = None
-            try:
-                image = _extract_article_thumbnail(article_url)
+                article = future.result()
+                if article:
+                    found.append(article)
             except Exception:
                 pass
-
-            found.append({
-                "title": title,
-                "link": article_url,
-                "source": "BeritaBojonegoro.com",
-                "published": published,
-                "summary": _clean_summary(summary[:420]),
-                "image": image,
-                "_published_parsed": published_parsed or time.gmtime(0),
-            })
-
     return found
-
 
 
 def get_persibo_news(limit=40):
@@ -806,83 +808,81 @@ def get_persibo_news(limit=40):
     collected = []
     seen = set()
 
-    # RSS penerbit diproses paralel; iNews dan iLeague juga dipindai sebagai sumber langsung.
-    with ThreadPoolExecutor(max_workers=min(4, len(RSS_FEEDS) or 1)) as executor:
-        futures = [executor.submit(_fetch_one_feed, cfg) for cfg in RSS_FEEDS]
-        for future in as_completed(futures):
-            feed_config, entries = future.result()
-            for entry in entries:
-                link = (entry.get("link") or "").strip()
-                title = _clean_summary(entry.get("title", ""))
-                if not link or not title or link in seen:
-                    continue
-                if not _is_persibo_relevant(entry):
-                    continue
-                seen.add(link)
-
-                source = entry.get("source", {}).get("title") or feed_config["name"]
-                collected.append({
-                    "title": title,
-                    "link": link,
-                    "source": source,
-                    "published": _entry_date(entry),
-                    "summary": _clean_summary(entry.get("summary", "")),
-                    "image": _entry_image(entry),
-                    "_published_parsed": entry.get("published_parsed") or entry.get("updated_parsed"),
-                })
-
-    # Tambahkan berita iNews Bojonegoro dari indeks kanal Olahraga dan indeks umum.
-    # Sumber ini tidak memakai Google News dan difilter khusus untuk Persibo/Bojonegoro.
-    try:
-        inews_articles = _fetch_inews_bojonegoro()
-        for article in inews_articles:
-            if article["link"] not in seen:
-                seen.add(article["link"])
-                collected.append(article)
-    except Exception:
-        pass
-
-    # Tambahkan berita Persibo dari BeritaBojonegoro.com melalui indeks kategori/beranda.
-    # Tidak ada artikel yang ditanam manual; seluruh item harus ditemukan dari situs penerbit.
-    try:
-        bojonegoro_articles = _fetch_berita_bojonegoro()
-        for article in bojonegoro_articles:
-            if article["link"] not in seen:
-                seen.add(article["link"])
-                collected.append(article)
-    except Exception:
-        pass
-
-    # Tambahkan berita resmi dari iLeague. Dedup tidak hanya berdasarkan URL,
-    # karena satu artikel kadang muncul dengan host/URL berbeda (ileague.id
-    # dan ligaindonesiabaru.com) atau variasi garis miring.
-    try:
-        import unicodedata as _unicodedata
-        from urllib.parse import urlparse as _urlparse
-
-        def _article_key(item):
-            title_key = re.sub(
-                r"[^a-z0-9]+", " ",
-                _unicodedata.normalize("NFKD", (item.get("title") or "").lower())
-                .encode("ascii", "ignore").decode("ascii"),
-            ).strip()
-            path = _urlparse(item.get("link") or "").path.rstrip("/")
-            slug = path.split("/")[-1].lower() if path else ""
-            return slug or title_key
-
-        existing_ileague_keys = {
-            _article_key(item) for item in collected
-            if (item.get("source") or "").lower() == "ileague"
+    # Jalankan RSS dan seluruh scraper media secara bersamaan agar waktu tunggu
+    # tidak dijumlahkan satu per satu.
+    source_results = {}
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        rss_futures = {
+            executor.submit(_fetch_one_feed, cfg): ("rss", cfg)
+            for cfg in RSS_FEEDS
         }
-        ileague_articles = _fetch_ileague_persibo()
-        for article in ileague_articles:
-            key = _article_key(article)
-            if article.get("link") not in seen and key not in existing_ileague_keys:
-                seen.add(article["link"])
-                existing_ileague_keys.add(key)
+        direct_futures = {
+            executor.submit(_fetch_inews_bojonegoro): "inews",
+            executor.submit(_fetch_ileague_persibo): "ileague",
+            executor.submit(_fetch_berita_bojonegoro): "beritabojonegoro",
+        }
+        for future in as_completed(list(rss_futures) + list(direct_futures)):
+            try:
+                if future in rss_futures:
+                    feed_config, entries = future.result()
+                    for entry in entries:
+                        link = (entry.get("link") or "").strip()
+                        title = _clean_summary(entry.get("title", ""))
+                        if not link or not title or link in seen:
+                            continue
+                        if not _is_persibo_relevant(entry):
+                            continue
+                        seen.add(link)
+                        source = entry.get("source", {}).get("title") or feed_config["name"]
+                        collected.append({
+                            "title": title,
+                            "link": link,
+                            "source": source,
+                            "published": _entry_date(entry),
+                            "summary": _clean_summary(entry.get("summary", "")),
+                            "image": _entry_image(entry),
+                            "_published_parsed": entry.get("published_parsed") or entry.get("updated_parsed"),
+                        })
+                else:
+                    source_name = direct_futures[future]
+                    source_results[source_name] = future.result()
+            except Exception:
+                # Satu penerbit yang gagal tidak boleh menggagalkan sumber lainnya.
+                continue
+
+    # Gabungkan hasil media langsung dan deduplikasi URL.
+    for source_name in ("inews", "ileague", "beritabojonegoro"):
+        for article in source_results.get(source_name, []) or []:
+            link = article.get("link")
+            if link and link not in seen:
+                seen.add(link)
                 collected.append(article)
-    except Exception:
-        pass
+
+    # Dedup iLeague lintas domain/variasi URL berdasarkan slug dan judul.
+    # Bila RSS sudah membawa artikel yang sama, buang duplikat iLeague.
+    import unicodedata as _unicodedata
+    from urllib.parse import urlparse as _urlparse
+
+    def _article_key(item):
+        title_key = re.sub(
+            r"[^a-z0-9]+", " ",
+            _unicodedata.normalize("NFKD", (item.get("title") or "").lower())
+            .encode("ascii", "ignore").decode("ascii"),
+        ).strip()
+        path = _urlparse(item.get("link") or "").path.rstrip("/")
+        slug = path.split("/")[-1].lower() if path else ""
+        return slug or title_key
+
+    deduped = []
+    seen_article_keys = set()
+    for item in collected:
+        key = _article_key(item)
+        if key and key in seen_article_keys:
+            continue
+        if key:
+            seen_article_keys.add(key)
+        deduped.append(item)
+    collected = deduped
 
     # Urutkan terbaru lebih dulu bila tanggal RSS tersedia.
     collected.sort(
@@ -894,7 +894,7 @@ def get_persibo_news(limit=40):
     # Prioritaskan og:image halaman artikel untuk berita terbaru.
     # WhatsApp umumnya menggunakan og:image sebagai gambar pratinjau tautan.
     # Jika metadata tidak tersedia, gambar dari RSS tetap dipakai sebagai cadangan.
-    og_candidates = selected[:_MAX_OG_LOOKUPS]
+    og_candidates = [item for item in selected if not item.get('image')][:_MAX_OG_LOOKUPS]
     if og_candidates:
         with ThreadPoolExecutor(max_workers=4) as executor:
             future_map = {
