@@ -740,10 +740,16 @@ def _fetch_berita_bojonegoro():
                 if not match:
                     continue
                 article_id = match.group(1)
-                candidates.setdefault(
-                    article_id,
-                    (href, " ".join(anchor.get_text(" ", strip=True).split()))
-                )
+                listing_title = " ".join(anchor.get_text(" ", strip=True).split())
+                # Ambil konteks kartu/area terdekat agar judul bisa dikenali
+                # meskipun teks anchor hanya berupa gambar atau tautan "Baca".
+                if len(listing_title) < 12:
+                    parent = anchor
+                    for _ in range(3):
+                        if parent.parent:
+                            parent = parent.parent
+                    listing_title = " ".join(parent.get_text(" ", strip=True).split())[:500]
+                candidates.setdefault(article_id, (href, listing_title))
 
     def fetch_article(article_id, article_url, listing_title):
         try:
@@ -761,54 +767,11 @@ def _fetch_berita_bojonegoro():
             title = soup.title.get_text(" ", strip=True)
         title = re.sub(r"\s*[|–-]\s*BeritaBojonegoro.*$", "", title, flags=re.I).strip()
 
-        # Jangan memeriksa seluruh halaman: ticker, sidebar, dan rekomendasi
-        # dapat memuat kata "Persibo" meskipun artikel utamanya tidak berkaitan.
-        description_tag = (
-            soup.find("meta", attrs={"name": "description"})
-            or soup.find("meta", property="og:description")
-        )
-        meta_description = (
-            description_tag.get("content", "").strip()
-            if description_tag else ""
-        )
-
-        article_body = (
-            soup.find("article")
-            or soup.select_one(
-                ".detail-content, .article-content, .news-detail, "
-                ".detail-news, .content-detail, .post-content"
-            )
-        )
-        if article_body:
-            paragraphs = article_body.find_all("p")
-            article_excerpt = " ".join(
-                p.get_text(" ", strip=True) for p in paragraphs[:5]
-            )
-            if not article_excerpt:
-                article_excerpt = article_body.get_text(" ", strip=True)[:1800]
-        else:
-            # Jika markup artikel tidak dikenali, gunakan deskripsi metadata saja;
-            # jangan fallback ke seluruh HTML halaman yang berisi berita sampingan.
-            article_excerpt = meta_description
-
-        relevance_text = " ".join(
-            part for part in (title, meta_description, article_excerpt) if part
-        )
-        relevance_lower = relevance_text.lower()
-        has_direct_persibo = any(
-            term in relevance_lower
-            for term in ("persibo", "laskar angling dharma", "angling dharma")
-        )
-        football_terms = (
-            "sepak bola", "sepakbola", "liga nusantara", "liga 3", "liga 2",
-            "klub", "suporter", "pemain", "pelatih", "stadion",
-            "pertandingan", "kompetisi", "kesebelasan", "persipa",
-        )
-        has_football_context = any(term in relevance_lower for term in football_terms)
-        if not (has_direct_persibo and has_football_context):
+        main = soup.find("article") or soup.find("main") or soup
+        summary = " ".join(main.get_text(" ", strip=True).split())[:3500]
+        if not _is_persibo_relevant({"title": title, "summary": summary}):
             return None
 
-        summary = " ".join(article_excerpt.split())[:420]
         published, published_parsed = _extract_article_published_date(article_url)
         # Gambar diambil belakangan hanya untuk berita terpilih, bukan setiap artikel.
         return {
@@ -822,8 +785,24 @@ def _fetch_berita_bojonegoro():
         }
 
     found = []
-    # Batasi detail artikel per kunjungan agar situs sumber tidak dibebani.
-    selected_candidates = list(candidates.items())[:18]
+    # Prioritaskan artikel yang judul/kartu indeksnya jelas menyebut Persibo.
+    # Tetap sisakan kandidat umum sebagai cadangan bila judul indeks tidak lengkap.
+    def candidate_priority(candidate):
+        _article_id, (_url, listing_title) = candidate
+        text = (listing_title or "").lower()
+        direct = any(term in text for term in (
+            "persibo", "laskar angling dharma", "angling dharma"
+        ))
+        football = any(term in text for term in (
+            "liga nusantara", "liga 2", "liga 3", "sepak bola",
+            "sepakbola", "persipa", "pertandingan"
+        ))
+        return (0 if direct and football else 1 if direct else 2)
+
+    ranked_candidates = sorted(candidates.items(), key=candidate_priority)
+    # Periksa lebih banyak kandidat, tetapi prioritaskan berita Persibo
+    # supaya berita yang jelas relevan tidak terpotong oleh artikel umum.
+    selected_candidates = ranked_candidates[:40]
     with ThreadPoolExecutor(max_workers=6) as executor:
         futures = [
             executor.submit(fetch_article, article_id, url, title)
