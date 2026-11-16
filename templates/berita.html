@@ -63,6 +63,11 @@
       <div class="news-grid">
         {% for article in articles %}
         <article class="news-card">
+          {% if article.image %}
+          <a class="news-card-image" href="{{ article.link }}" target="_blank" rel="noopener noreferrer" aria-label="Buka berita: {{ article.title }}">
+            <img src="{{ article.image }}" alt="Gambar berita: {{ article.title }}" loading="lazy" referrerpolicy="no-referrer">
+          </a>
+          {% endif %}
           <div class="news-card-top">
             <span class="news-source">{{ article.source }}</span>
             <span class="news-date">{{ article.published }}</span>
