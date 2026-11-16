@@ -767,10 +767,53 @@ def _fetch_berita_bojonegoro():
             title = soup.title.get_text(" ", strip=True)
         title = re.sub(r"\s*[|–-]\s*BeritaBojonegoro.*$", "", title, flags=re.I).strip()
 
-        main = soup.find("article") or soup.find("main") or soup
-        summary = " ".join(main.get_text(" ", strip=True).split())[:3500]
-        if not _is_persibo_relevant({"title": title, "summary": summary}):
+        # Gunakan hanya isi artikel, bukan keseluruhan halaman yang dapat
+        # memuat ticker, sidebar, atau tautan berita rekomendasi.
+        article_body = (
+            soup.select_one(
+                ".detail-content, .article-content, .news-detail, "
+                ".detail-news, .content-detail, .post-content"
+            )
+            or soup.find("article")
+        )
+        if article_body:
+            paragraphs = [
+                " ".join(p.get_text(" ", strip=True).split())
+                for p in article_body.find_all("p")
+            ]
+            paragraphs = [p for p in paragraphs if p]
+            article_excerpt = " ".join(paragraphs[:3])[:1800]
+        else:
+            meta_description = (
+                soup.find("meta", attrs={"name": "description"})
+                or soup.find("meta", property="og:description")
+            )
+            article_excerpt = (
+                meta_description.get("content", "").strip()
+                if meta_description else ""
+            )
+
+        direct_terms = ("persibo", "laskar angling dharma", "angling dharma")
+        football_terms = (
+            "sepak bola", "sepakbola", "liga nusantara", "liga 3", "liga 2",
+            "pemain", "pelatih", "stadion", "pertandingan",
+            "kompetisi", "kesebelasan", "persipa",
+        )
+        title_lower = title.lower()
+        excerpt_lower = article_excerpt.lower()
+        title_mentions_persibo = any(term in title_lower for term in direct_terms)
+        intro_mentions_persibo = any(term in excerpt_lower for term in direct_terms)
+        intro_has_football = any(term in excerpt_lower for term in football_terms)
+
+        # Persibo harus disebut pada judul, atau pada paragraf pembuka
+        # bersama konteks sepak bola. Teks halaman di luar artikel diabaikan.
+        if not (
+            title_mentions_persibo
+            or (intro_mentions_persibo and intro_has_football)
+        ):
             return None
+
+        summary = " ".join(article_excerpt.split())[:420]
 
         published, published_parsed = _extract_article_published_date(article_url)
         # Gambar diambil belakangan hanya untuk berita terpilih, bukan setiap artikel.
