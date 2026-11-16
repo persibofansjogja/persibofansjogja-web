@@ -462,7 +462,7 @@ def _fetch_ileague_persibo():
                 "title": item["title"], "link": link, "source": "iLeague",
                 "published": item["published"], "summary": "",
                 "image": _extract_article_thumbnail(link),
-                "_published_parsed": time.strptime("%Y-%m-%d" % item["date"], "%Y-%m-%d"),
+                "_published_parsed": time.strptime("{:04d}-{:02d}-{:02d}".format(*item["date"]), "%Y-%m-%d"),
             })
 
     # Antrean berisi halaman klub, arsip berita, dan pagination yang ditemukan.
