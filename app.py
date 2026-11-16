@@ -46,6 +46,65 @@ def _clean_summary(value):
     return " ".join(unescape(text).split())
 
 
+
+def _safe_image_url(url):
+    """Terima URL gambar HTTP(S) saja."""
+    from urllib.parse import urlparse
+    if not url:
+        return None
+    candidate = url.strip()
+    parsed = urlparse(candidate)
+    if parsed.scheme in ("http", "https") and parsed.netloc:
+        return candidate
+    return None
+
+
+def _entry_image(entry):
+    """Cari gambar dari media:thumbnail, media:content, enclosure, atau HTML ringkasan."""
+    from html.parser import HTMLParser
+
+    for field in ("media_thumbnail", "media_content"):
+        media_items = entry.get(field, []) or []
+        for media in media_items:
+            image_url = _safe_image_url(media.get("url"))
+            if image_url:
+                return image_url
+
+    for enclosure in entry.get("enclosures", []) or []:
+        mime = enclosure.get("type", "")
+        if mime.startswith("image/") or not mime:
+            image_url = _safe_image_url(enclosure.get("href") or enclosure.get("url"))
+            if image_url:
+                return image_url
+
+    for link in entry.get("links", []) or []:
+        if link.get("rel") == "enclosure":
+            mime = link.get("type", "")
+            if mime.startswith("image/") or not mime:
+                image_url = _safe_image_url(link.get("href"))
+                if image_url:
+                    return image_url
+
+    class ImageFinder(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.image = None
+
+        def handle_starttag(self, tag, attrs):
+            if tag.lower() == "img" and not self.image:
+                attrs_dict = dict(attrs)
+                self.image = _safe_image_url(attrs_dict.get("src") or attrs_dict.get("data-src"))
+
+    finder = ImageFinder()
+    try:
+        finder.feed(entry.get("summary", "") or "")
+        if finder.image:
+            return finder.image
+    except Exception:
+        pass
+    return None
+
+
 def get_persibo_news(limit=40):
     """Ambil berita Persibo dari RSS; satu feed gagal tidak menggagalkan halaman."""
     items = []
@@ -71,6 +130,7 @@ def get_persibo_news(limit=40):
                     "source": source,
                     "published": _entry_date(entry),
                     "summary": _clean_summary(entry.get("summary", "")),
+                    "image": _entry_image(entry),
                 })
         except Exception:
             # RSS bisa sesaat tidak tersedia; tampilkan status kosong di halaman.
