@@ -16,8 +16,29 @@ from flask import Flask, Response, render_template
 
 app = Flask(__name__)
 
-# Google News RSS: artikel yang relevan dengan Persibo Bojonegoro.
+# RSS langsung dari penerbit menjadi sumber utama.
+# Google News tetap dipakai sebagai sumber pelengkap agar cakupan lebih luas.
 RSS_FEEDS = [
+    {
+        "name": "blokBojonegoro.com",
+        "url": "https://blokbojonegoro.com/rss.xml",
+    },
+    {
+        "name": "ANTARA Jawa Timur",
+        "url": "https://jatim.antaranews.com/rss/terkini.xml",
+    },
+    {
+        "name": "ANTARA Kabar Jatim",
+        "url": "https://jatim.antaranews.com/rss/kabar-jatim.xml",
+    },
+    {
+        "name": "ANTARA Sepak Bola Indonesia",
+        "url": "https://www.antaranews.com/rss/sepakbola-liga-indonesia.xml",
+    },
+    {
+        "name": "CNN Indonesia Olahraga",
+        "url": "https://www.cnnindonesia.com/olahraga/rss",
+    },
     {
         "name": "Google News",
         "url": "https://news.google.com/rss/search?q=Persibo&hl=id&gl=ID&ceid=ID:id",
@@ -264,6 +285,32 @@ def _og_image_for_article(article):
     return _extract_article_thumbnail(article["link"])
 
 
+
+def _is_persibo_relevant(entry):
+    """Saring agar feed umum hanya menampilkan berita terkait Persibo."""
+    from re import search
+    title = entry.get("title", "") or ""
+    summary = entry.get("summary", "") or entry.get("description", "") or ""
+    text = (title + " " + summary).lower()
+
+    direct_terms = (
+        "persibo",
+        "laskar angling dharma",
+        "angling dharma",
+    )
+    if any(term in text for term in direct_terms):
+        return True
+
+    # Artikel tentang Bojonegoro hanya diterima jika konteksnya sepak bola.
+    has_bojonegoro = "bojonegoro" in text
+    football_terms = (
+        "sepak bola", "sepakbola", "liga nusantara", "liga 3",
+        "liga 2", "klub", "suporter", "pemain", "pelatih",
+        "stadion", "pertandingan", "kompetisi", "kesebelasan",
+    )
+    return has_bojonegoro and any(term in text for term in football_terms)
+
+
 def get_persibo_news(limit=40):
     """Ambil berita dari RSS secara paralel, ekstrak thumbnail, dan cache 30 detik."""
     global _NEWS_CACHE, _NEWS_CACHE_AT
@@ -285,6 +332,8 @@ def get_persibo_news(limit=40):
                 link = (entry.get("link") or "").strip()
                 title = _clean_summary(entry.get("title", ""))
                 if not link or not title or link in seen:
+                    continue
+                if not _is_persibo_relevant(entry):
                     continue
                 seen.add(link)
 
