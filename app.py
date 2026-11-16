@@ -1,6 +1,13 @@
 import os
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+from urllib.parse import urljoin, urlparse
+import ipaddress
+import socket
+import time
+
+import requests
+from bs4 import BeautifulSoup
 
 import feedparser
 from flask import Flask, Response, render_template
@@ -105,6 +112,126 @@ def _entry_image(entry):
     return None
 
 
+
+# Cache sederhana agar halaman penerbit tidak diambil berulang kali setiap request.
+_THUMBNAIL_CACHE = {}
+_THUMBNAIL_CACHE_TTL = 6 * 60 * 60
+_MAX_ARTICLE_LOOKUPS = 12
+
+
+def _is_public_http_url(url):
+    """Batasi URL ke HTTP(S) dan host publik; blokir localhost/IP privat."""
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            return False
+        host = parsed.hostname.lower()
+        if host in ("localhost",) or host.endswith((".localhost", ".local")):
+            return False
+        addresses = socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme == "https" else 80))
+        for result in addresses:
+            ip = ipaddress.ip_address(result[4][0])
+            if not ip.is_global:
+                return False
+        return bool(addresses)
+    except (ValueError, OSError):
+        return False
+
+
+def _extract_article_thumbnail(article_url):
+    """Ambil og:image/twitter:image dari halaman artikel dengan redirect yang dibatasi."""
+    cached = _THUMBNAIL_CACHE.get(article_url)
+    now = time.time()
+    if cached and now - cached[0] < _THUMBNAIL_CACHE_TTL:
+        return cached[1]
+
+    current_url = article_url
+    image_url = None
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; PersiboFansJogjaNews/1.0)",
+        "Accept": "text/html,application/xhtml+xml",
+    }
+
+    try:
+        # Periksa setiap tujuan redirect sebelum mengirim request berikutnya.
+        for _ in range(4):
+            if not _is_public_http_url(current_url):
+                break
+            response = requests.get(
+                current_url,
+                headers=headers,
+                timeout=(3, 4),
+                allow_redirects=False,
+                stream=True,
+            )
+            if response.is_redirect or response.is_permanent_redirect:
+                location = response.headers.get("Location")
+                response.close()
+                if not location:
+                    break
+                current_url = urljoin(current_url, location)
+                continue
+
+            content_type = response.headers.get("Content-Type", "").lower()
+            if response.status_code != 200 or "html" not in content_type:
+                response.close()
+                break
+
+            # Batasi ukuran HTML yang dibaca.
+            chunks = []
+            total = 0
+            for chunk in response.iter_content(chunk_size=16384):
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > 1_000_000:
+                    break
+                chunks.append(chunk)
+            response.close()
+            html = b"".join(chunks)
+            soup = BeautifulSoup(html, "html.parser")
+
+            for attrs in (
+                {"property": "og:image"},
+                {"property": "og:image:secure_url"},
+                {"name": "twitter:image"},
+                {"name": "twitter:image:src"},
+            ):
+                tag = soup.find("meta", attrs=attrs)
+                if tag and tag.get("content"):
+                    candidate = urljoin(current_url, tag["content"].strip())
+                    if _safe_image_url(candidate):
+                        image_url = candidate
+                        break
+
+            # Fallback: gambar pertama di area artikel utama.
+            if not image_url:
+                main = soup.find("article") or soup.find("main")
+                if main:
+                    img = main.find("img")
+                    if img:
+                        candidate = img.get("src") or img.get("data-src") or img.get("data-lazy-src")
+                        if candidate:
+                            candidate = urljoin(current_url, candidate.strip())
+                            if _safe_image_url(candidate):
+                                image_url = candidate
+            break
+
+    except requests.RequestException:
+        image_url = None
+    except Exception:
+        image_url = None
+
+    _THUMBNAIL_CACHE[article_url] = (now, image_url)
+    # Jaga cache agar tidak terus membesar pada proses server yang panjang.
+    if len(_THUMBNAIL_CACHE) > 500:
+        oldest = sorted(_THUMBNAIL_CACHE.items(), key=lambda item: item[1][0])[:100]
+        for key, _ in oldest:
+            _THUMBNAIL_CACHE.pop(key, None)
+
+    return image_url
+
+
 def get_persibo_news(limit=40):
     """Ambil berita Persibo dari RSS; satu feed gagal tidak menggagalkan halaman."""
     items = []
@@ -136,7 +263,17 @@ def get_persibo_news(limit=40):
             # RSS bisa sesaat tidak tersedia; tampilkan status kosong di halaman.
             continue
 
-    return items[:limit]
+    selected = items[:limit]
+
+    # RSS tidak selalu menyertakan gambar. Untuk beberapa berita teratas,
+    # ambil metadata og:image/twitter:image langsung dari halaman artikelnya.
+    lookups = 0
+    for article in selected:
+        if not article.get("image") and lookups < _MAX_ARTICLE_LOOKUPS:
+            lookups += 1
+            article["image"] = _extract_article_thumbnail(article["link"])
+
+    return selected
 
 
 @app.get("/")
