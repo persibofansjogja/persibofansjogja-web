@@ -323,100 +323,107 @@ def _relative_inews_time(text):
 
 
 def _fetch_inews_bojonegoro():
-    """Temukan berita Persibo dari indeks resmi iNews Bojonegoro, tanpa Google News."""
-    from urllib.parse import urljoin, urlparse
+    """Ambil berita Persibo dari indeks iNews dan tautan AMP/READ, tanpa Google News."""
+    from urllib.parse import urljoin, urlparse, urlunparse, parse_qs, urlencode
+    import html as _html
+
+    host = "bojonegoro.inews.id"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    }
+
+    found = []
+    seen_ids = set()
+
+    def _article_id(url):
+        match = re.search(r"/(?:amp|read)/(\d+)(?:/|$)", urlparse(url).path, re.I)
+        return match.group(1) if match else None
+
+    def _canonical_article_url(url):
+        parsed = urlparse(url)
+        path = re.sub(r"^/amp/", "/read/", parsed.path, flags=re.I)
+        return urlunparse((parsed.scheme or "https", parsed.netloc or host, path, "", "", ""))
+
+    def _append_article(article_id, title, url, published_parsed=None, published="Tanggal tidak tersedia"):
+        if not article_id or article_id in seen_ids:
+            return
+        title = " ".join((title or "").split()).strip()
+        if not title:
+            return
+        seen_ids.add(article_id)
+        canonical = _canonical_article_url(url)
+        try:
+            image = _extract_article_thumbnail(canonical)
+        except Exception:
+            image = None
+        found.append({
+            "title": title,
+            "link": canonical,
+            "source": "iNews Bojonegoro",
+            "published": published,
+            "summary": "",
+            "image": image,
+            "_published_parsed": published_parsed or time.gmtime(0),
+        })
+
+    # Indeks umum, kanal Bojonegoro, kanal Olahraga, dan beberapa bentuk pagination.
     pages = [
         "https://bojonegoro.inews.id/",
         "https://bojonegoro.inews.id/indeks/bojonegoro/all",
+        "https://bojonegoro.inews.id/indeks/olahraga/all",
         "https://bojonegoro.inews.id/indeks/all/all",
     ]
-    headers = {
-        "User-Agent": "Mozilla/5.0 (compatible; PersiboFansJogjaNews/1.0)",
-        "Accept": "text/html,application/xhtml+xml",
-    }
-    found = []
-    seen = set()
-
-    # Seed artikel yang dilaporkan pengguna agar tetap ditemukan meskipun
-    # artikel sedang tidak tampil pada daftar indeks yang dipaginasi.
-    known_article = (
-        "https://bojonegoro.inews.id/read/730187/"
-        "kata-pelatih-persibo-bojonegoro-usai-ditahan-persipa-pati-tanpa-gol-di-laga-perdana-liga-nusantara"
-    )
-    known_title = (
-        "Kata Pelatih Persibo Bojonegoro, Usai Ditahan Persipa Pati "
-        "Tanpa Gol di Laga Perdana Liga Nusantara"
-    )
-    known_image = _extract_article_thumbnail(known_article)
-    found.append({
-        "title": known_title,
-        "link": known_article,
-        "source": "iNews Bojonegoro",
-        "published": "14 November 2026",
-        "summary": "",
-        "image": known_image,
-        "_published_parsed": time.gmtime(0),
-    })
-    seen.add(known_article)
+    for base in list(pages[1:]):
+        for page_no in range(2, 6):
+            pages.append(base + "?page={}".format(page_no))
 
     for page_url in pages:
         try:
-            response = requests.get(page_url, headers=headers, timeout=(3, 7))
+            response = requests.get(page_url, headers=headers, timeout=(4, 10))
             response.raise_for_status()
             soup = BeautifulSoup(response.text, "html.parser")
-        except requests.RequestException:
-            continue
         except Exception:
             continue
 
         for anchor in soup.find_all("a", href=True):
-            href = urljoin(page_url, anchor.get("href", "").strip())
+            href = urljoin(page_url, _html.unescape(anchor.get("href", "").strip()))
             parsed = urlparse(href)
-            # Ambil hanya halaman artikel iNews Bojonegoro, bukan tautan navigasi.
-            if parsed.netloc.lower() not in ("bojonegoro.inews.id", "www.bojonegoro.inews.id"):
+            if parsed.netloc.lower() not in (host, "www." + host):
                 continue
-            if not re.search(r"/(?:amp|read)/\d+/", parsed.path):
-                continue
-
-            link = href.split("#", 1)[0]
-            if link in seen:
+            article_id = _article_id(href)
+            if not article_id or article_id in seen_ids:
                 continue
 
             listing_text = " ".join(anchor.get_text(" ", strip=True).split())
             title = re.sub(
                 r"^(?:Olahraga|Bojonegoro|Jatim|Nasional|Ekbis|Lifestyle|Wisata dan Religi)\s+"
-                r"\d+\s+(?:menit|jam|hari|minggu|bulan)\s+lalu\s+",
-                "",
-                listing_text,
-                flags=re.IGNORECASE,
+                r"\d+\s+(?:detik|menit|jam|hari|minggu|bulan)\s+lalu\s+",
+                "", listing_text, flags=re.IGNORECASE,
             ).strip()
 
-            if not title:
-                title = listing_text
-            entry = {"title": title, "summary": ""}
-            if not _is_persibo_relevant(entry):
+            # Jika teks anchor kosong atau hanya label, baca metadata halaman artikel.
+            if len(title) < 12:
+                try:
+                    article_response = requests.get(
+                        _canonical_article_url(href), headers=headers, timeout=(4, 8)
+                    )
+                    article_response.raise_for_status()
+                    article_soup = BeautifulSoup(article_response.text, "html.parser")
+                    meta = article_soup.find("meta", property="og:title")
+                    title = (meta.get("content", "") if meta else "") or (
+                        article_soup.title.get_text(" ", strip=True) if article_soup.title else ""
+                    )
+                    title = re.sub(r"\s*[|–-]\s*iNews.*$", "", title, flags=re.I).strip()
+                except Exception:
+                    title = ""
+
+            # Gunakan judul dan konteks tautan; tidak hanya mengandalkan teks indeks.
+            if not _is_persibo_relevant({"title": title, "summary": href}):
                 continue
 
-            seen.add(link)
             published_parsed = _relative_inews_time(listing_text)
-            image = _extract_article_thumbnail(link)
-
-            found.append({
-                "title": title,
-                "link": link,
-                "source": "iNews Bojonegoro",
-                "published": "Tanggal tidak tersedia",
-                "summary": "",
-                "image": image,
-                "_published_parsed": published_parsed or time.gmtime(0),
-            })
-
-            # Cukup ambil beberapa artikel terbaru agar request ke penerbit tetap terbatas.
-            if len(found) >= 12:
-                break
-
-        if len(found) >= 12:
-            break
+            _append_article(article_id, title, href, published_parsed)
 
     return found
 
@@ -447,30 +454,7 @@ def _fetch_ileague_persibo():
         path = urlparse(url).path.rstrip("/")
         return path.split("/")[-1].lower() if path else ""
 
-    known_articles = [
-        {
-            "title": "Catat Hasil Imbang, Putu Gede Tetap Apreasiasi Perjuangan Pemain Persibo",
-            "link": "https://ileague.id/news/detail/catat-hasil-imbang-putu-gede-tetap-apreasiasi-perjuangan-pemain-persibo",
-            "published": "14 November 2026", "date": (2026, 11, 14),
-        },
-        {
-            "title": "Persibo Bertekad Amankan Poin Penuh di Laga Perdana",
-            "link": "https://ileague.id/news/detail/persibo-bertekad-amankan-poin-penuh-di-laga-perdana",
-            "published": "13 November 2026", "date": (2026, 11, 13),
-        },
-    ]
-    for item in known_articles:
-        link = item["link"]
-        slug = _article_slug(link)
-        if link not in seen_articles and slug not in seen_article_slugs:
-            seen_articles.add(link)
-            seen_article_slugs.add(slug)
-            found.append({
-                "title": item["title"], "link": link, "source": "iLeague",
-                "published": item["published"], "summary": "",
-                "image": _extract_article_thumbnail(link),
-                "_published_parsed": time.strptime("{:04d}-{:02d}-{:02d}".format(*item["date"]), "%Y-%m-%d"),
-            })
+    # Tidak ada artikel yang disisipkan manual; semua berita harus ditemukan dari halaman klub/arsip iLeague.
 
     # Antrean berisi halaman klub, arsip berita, dan pagination yang ditemukan.
     queue = club_pages + archive_pages
