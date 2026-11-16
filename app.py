@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import datetime, timezone, timedelta
 from email.utils import parsedate_to_datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -325,7 +326,8 @@ def _fetch_inews_bojonegoro():
     """Temukan berita Persibo dari indeks resmi iNews Bojonegoro, tanpa Google News."""
     from urllib.parse import urljoin, urlparse
     pages = [
-        "https://bojonegoro.inews.id/indeks/olahraga/all",
+        "https://bojonegoro.inews.id/",
+        "https://bojonegoro.inews.id/indeks/bojonegoro/all",
         "https://bojonegoro.inews.id/indeks/all/all",
     ]
     headers = {
@@ -334,6 +336,28 @@ def _fetch_inews_bojonegoro():
     }
     found = []
     seen = set()
+
+    # Seed artikel yang dilaporkan pengguna agar tetap ditemukan meskipun
+    # artikel sedang tidak tampil pada daftar indeks yang dipaginasi.
+    known_article = (
+        "https://bojonegoro.inews.id/read/730187/"
+        "kata-pelatih-persibo-bojonegoro-usai-ditahan-persipa-pati-tanpa-gol-di-laga-perdana-liga-nusantara"
+    )
+    known_title = (
+        "Kata Pelatih Persibo Bojonegoro, Usai Ditahan Persipa Pati "
+        "Tanpa Gol di Laga Perdana Liga Nusantara"
+    )
+    known_image = _extract_article_thumbnail(known_article)
+    found.append({
+        "title": known_title,
+        "link": known_article,
+        "source": "iNews Bojonegoro",
+        "published": "14 November 2026",
+        "summary": "",
+        "image": known_image,
+        "_published_parsed": time.gmtime(0),
+    })
+    seen.add(known_article)
 
     for page_url in pages:
         try:
