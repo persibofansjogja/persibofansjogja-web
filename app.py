@@ -1,6 +1,8 @@
 import os
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 from urllib.parse import urljoin, urlparse
 import ipaddress
 import socket
@@ -85,12 +87,11 @@ def _entry_image(entry):
                 return image_url
 
     for link in entry.get("links", []) or []:
-        if link.get("rel") == "enclosure":
-            mime = link.get("type", "")
-            if mime.startswith("image/") or not mime:
-                image_url = _safe_image_url(link.get("href"))
-                if image_url:
-                    return image_url
+        mime = link.get("type", "")
+        if link.get("rel") == "enclosure" or mime.startswith("image/"):
+            image_url = _safe_image_url(link.get("href"))
+            if image_url:
+                return image_url
 
     class ImageFinder(HTMLParser):
         def __init__(self):
@@ -104,7 +105,7 @@ def _entry_image(entry):
 
     finder = ImageFinder()
     try:
-        finder.feed(entry.get("summary", "") or "")
+        finder.feed(entry.get("summary", "") or entry.get("description", "") or "")
         if finder.image:
             return finder.image
     except Exception:
@@ -232,46 +233,102 @@ def _extract_article_thumbnail(article_url):
     return image_url
 
 
+
+# Cache berita singkat seperti mekanisme pada website referensi.
+_NEWS_CACHE = []
+_NEWS_CACHE_AT = 0.0
+_NEWS_CACHE_TTL = 30
+_NEWS_CACHE_LOCK = Lock()
+_MAX_OG_LOOKUPS = 10
+
+
+def _fetch_one_feed(feed_config):
+    """Ambil dan parse satu RSS; dipanggil paralel oleh ThreadPoolExecutor."""
+    try:
+        response = requests.get(
+            feed_config["url"],
+            headers={"User-Agent": "Mozilla/5.0 (compatible; PersiboFansJogja/1.0)"},
+            timeout=(3, 6),
+        )
+        response.raise_for_status()
+        parsed = feedparser.parse(response.content)
+        return feed_config, parsed.entries
+    except requests.RequestException:
+        return feed_config, []
+    except Exception:
+        return feed_config, []
+
+
+def _og_image_for_article(article):
+    """Fallback metadata gambar artikel jika RSS tidak membawa thumbnail."""
+    return _extract_article_thumbnail(article["link"])
+
+
 def get_persibo_news(limit=40):
-    """Ambil berita Persibo dari RSS; satu feed gagal tidak menggagalkan halaman."""
-    items = []
+    """Ambil berita dari RSS secara paralel, ekstrak thumbnail, dan cache 30 detik."""
+    global _NEWS_CACHE, _NEWS_CACHE_AT
+
+    now = time.time()
+    with _NEWS_CACHE_LOCK:
+        if _NEWS_CACHE and now - _NEWS_CACHE_AT < _NEWS_CACHE_TTL:
+            return _NEWS_CACHE[:limit]
+
+    collected = []
     seen = set()
 
-    for feed_config in RSS_FEEDS:
-        try:
-            parsed = feedparser.parse(
-                feed_config["url"],
-                request_headers={"User-Agent": "PersiboFansJogja/1.0 (+https://www.persibofansjogja.web.id)"}
-            )
-            for entry in parsed.entries:
-                link = entry.get("link", "").strip()
+    # Kedua feed Google News diproses bersamaan.
+    with ThreadPoolExecutor(max_workers=min(4, len(RSS_FEEDS) or 1)) as executor:
+        futures = [executor.submit(_fetch_one_feed, cfg) for cfg in RSS_FEEDS]
+        for future in as_completed(futures):
+            feed_config, entries = future.result()
+            for entry in entries:
+                link = (entry.get("link") or "").strip()
                 title = _clean_summary(entry.get("title", ""))
                 if not link or not title or link in seen:
                     continue
                 seen.add(link)
 
                 source = entry.get("source", {}).get("title") or feed_config["name"]
-                items.append({
+                collected.append({
                     "title": title,
                     "link": link,
                     "source": source,
                     "published": _entry_date(entry),
                     "summary": _clean_summary(entry.get("summary", "")),
                     "image": _entry_image(entry),
+                    "_published_parsed": entry.get("published_parsed") or entry.get("updated_parsed"),
                 })
-        except Exception:
-            # RSS bisa sesaat tidak tersedia; tampilkan status kosong di halaman.
-            continue
 
-    selected = items[:limit]
+    # Urutkan terbaru lebih dulu bila tanggal RSS tersedia.
+    collected.sort(
+        key=lambda item: item.get("_published_parsed") or (0, 0, 0, 0, 0, 0),
+        reverse=True,
+    )
+    selected = collected[:limit]
 
-    # RSS tidak selalu menyertakan gambar. Untuk beberapa berita teratas,
-    # ambil metadata og:image/twitter:image langsung dari halaman artikelnya.
-    lookups = 0
-    for article in selected:
-        if not article.get("image") and lookups < _MAX_ARTICLE_LOOKUPS:
-            lookups += 1
-            article["image"] = _extract_article_thumbnail(article["link"])
+    # RSS kadang tidak menyertakan gambar. Coba metadata artikel untuk beberapa
+    # berita teratas yang belum memiliki gambar, dengan jumlah request dibatasi.
+    missing = [item for item in selected if not item.get("image")][:_MAX_OG_LOOKUPS]
+    if missing:
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            future_map = {
+                executor.submit(_og_image_for_article, item): item
+                for item in missing
+            }
+            for future in as_completed(future_map):
+                item = future_map[future]
+                try:
+                    item["image"] = future.result()
+                except Exception:
+                    item["image"] = None
+
+    # Hilangkan field internal sebelum dikirim ke template.
+    for item in selected:
+        item.pop("_published_parsed", None)
+
+    with _NEWS_CACHE_LOCK:
+        _NEWS_CACHE = selected
+        _NEWS_CACHE_AT = time.time()
 
     return selected
 
