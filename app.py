@@ -441,6 +441,11 @@ def _fetch_ileague_persibo():
         "Accept": "text/html,application/xhtml+xml",
     }
     found, seen_articles, seen_pages = [], set(), set()
+    seen_article_slugs = set()
+
+    def _article_slug(url):
+        path = urlparse(url).path.rstrip("/")
+        return path.split("/")[-1].lower() if path else ""
 
     known_articles = [
         {
@@ -456,8 +461,10 @@ def _fetch_ileague_persibo():
     ]
     for item in known_articles:
         link = item["link"]
-        if link not in seen_articles:
+        slug = _article_slug(link)
+        if link not in seen_articles and slug not in seen_article_slugs:
             seen_articles.add(link)
+            seen_article_slugs.add(slug)
             found.append({
                 "title": item["title"], "link": link, "source": "iLeague",
                 "published": item["published"], "summary": "",
@@ -489,13 +496,15 @@ def _fetch_ileague_persibo():
             path = parsed.path or ""
 
             # Ambil tautan artikel dari halaman klub maupun arsip berita.
-            if "/news/detail/" in path and href not in seen_articles:
+            href_slug = _article_slug(href)
+            if "/news/detail/" in path and href not in seen_articles and href_slug not in seen_article_slugs:
                 title = " ".join(anchor.get_text(" ", strip=True).split())
                 if not title:
                     title = (anchor.get("title") or "").strip()
                 if not title or not _is_persibo_relevant({"title": title, "summary": ""}):
                     continue
                 seen_articles.add(href)
+                seen_article_slugs.add(href_slug)
                 found.append({
                     "title": title, "link": href, "source": "iLeague",
                     "published": "Tanggal tidak tersedia", "summary": "",
@@ -569,12 +578,33 @@ def get_persibo_news(limit=40):
     except Exception:
         pass
 
-    # Tambahkan berita resmi dari kanal klub Persibo di iLeague.
+    # Tambahkan berita resmi dari iLeague. Dedup tidak hanya berdasarkan URL,
+    # karena satu artikel kadang muncul dengan host/URL berbeda (ileague.id
+    # dan ligaindonesiabaru.com) atau variasi garis miring.
     try:
+        import unicodedata as _unicodedata
+        from urllib.parse import urlparse as _urlparse
+
+        def _article_key(item):
+            title_key = re.sub(
+                r"[^a-z0-9]+", " ",
+                _unicodedata.normalize("NFKD", (item.get("title") or "").lower())
+                .encode("ascii", "ignore").decode("ascii"),
+            ).strip()
+            path = _urlparse(item.get("link") or "").path.rstrip("/")
+            slug = path.split("/")[-1].lower() if path else ""
+            return slug or title_key
+
+        existing_ileague_keys = {
+            _article_key(item) for item in collected
+            if (item.get("source") or "").lower() == "ileague"
+        }
         ileague_articles = _fetch_ileague_persibo()
         for article in ileague_articles:
-            if article["link"] not in seen:
+            key = _article_key(article)
+            if article.get("link") not in seen and key not in existing_ileague_keys:
                 seen.add(article["link"])
+                existing_ileague_keys.add(key)
                 collected.append(article)
     except Exception:
         pass
