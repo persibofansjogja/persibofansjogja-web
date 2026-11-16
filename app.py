@@ -16,8 +16,7 @@ from flask import Flask, Response, render_template
 
 app = Flask(__name__)
 
-# RSS langsung dari penerbit menjadi sumber utama.
-# Google News tetap dipakai sebagai sumber pelengkap agar cakupan lebih luas.
+# Semua berita diambil langsung dari RSS penerbit; Google News tidak digunakan.
 RSS_FEEDS = [
     {
         "name": "blokBojonegoro.com",
@@ -38,14 +37,6 @@ RSS_FEEDS = [
     {
         "name": "CNN Indonesia Olahraga",
         "url": "https://www.cnnindonesia.com/olahraga/rss",
-    },
-    {
-        "name": "Google News",
-        "url": "https://news.google.com/rss/search?q=Persibo&hl=id&gl=ID&ceid=ID:id",
-    },
-    {
-        "name": "Google News",
-        "url": "https://news.google.com/rss/search?q=%22Laskar+Angling+Dharma%22&hl=id&gl=ID&ceid=ID:id",
     }
 ]
 
@@ -312,7 +303,7 @@ def _is_persibo_relevant(entry):
 
 
 def get_persibo_news(limit=40):
-    """Ambil berita dari RSS secara paralel, ekstrak thumbnail, dan cache 30 detik."""
+    """Ambil berita dari RSS penerbit secara paralel, ekstrak thumbnail, dan cache 30 detik."""
     global _NEWS_CACHE, _NEWS_CACHE_AT
 
     now = time.time()
@@ -323,7 +314,7 @@ def get_persibo_news(limit=40):
     collected = []
     seen = set()
 
-    # Kedua feed Google News diproses bersamaan.
+    # Seluruh RSS penerbit diproses bersamaan.
     with ThreadPoolExecutor(max_workers=min(4, len(RSS_FEEDS) or 1)) as executor:
         futures = [executor.submit(_fetch_one_feed, cfg) for cfg in RSS_FEEDS]
         for future in as_completed(futures):
