@@ -13,3 +13,44 @@
 @media(max-width:800px){.container{width:min(100% - 36px,600px)}.site-header{height:72px}.menu-toggle{display:block;cursor:pointer;z-index:22}.nav-links{position:absolute;top:71px;left:0;right:0;padding:12px 24px 24px;background:#111;border-bottom:1px solid var(--line);display:flex;flex-direction:column;align-items:stretch;gap:0;transform:translateY(-10px);opacity:0;visibility:hidden;transition:.25s}.nav-links.open{transform:translateY(0);opacity:1;visibility:visible}.nav-link{padding:16px 4px;border-bottom:1px solid var(--line)}.nav-cta{margin-top:12px;padding:15px}.menu-toggle[aria-expanded="true"] span:first-child{transform:translateY(7px) rotate(45deg)}.menu-toggle[aria-expanded="true"] span:nth-child(2){opacity:0}.menu-toggle[aria-expanded="true"] span:last-child{transform:translateY(-7px) rotate(-45deg)}.hero-grid{grid-template-columns:1fr;padding-top:75px;padding-bottom:50px}.hero{min-height:auto}.hero h1{font-size:clamp(68px,15vw,100px)}.hero-visual{min-height:400px;margin-top:30px}.visual-card{height:350px;width:290px}.hero-logo{width:165px;height:165px}.orbit-one{width:350px}.orbit-two{width:390px}.tag-top{right:8%}.intro-grid{grid-template-columns:1fr;gap:30px}.intro{padding:85px 0}.intro h2{font-size:clamp(50px,11vw,75px)}.values{padding:85px 0}.values-heading{align-items:start;flex-direction:column;gap:22px}.value-grid{grid-template-columns:1fr}.value-card{min-height:220px;border-right:0;border-bottom:1px solid var(--line)}.value-card:last-child{border-bottom:0}.value-icon{margin-top:16px}.join-section{padding:65px 0}.join-panel{grid-template-columns:1fr;padding:50px 28px;min-height:unset}.join-side{display:none}.join-content h2{font-size:clamp(56px,12vw,78px)}.join-decoration{font-size:220px;right:-5%;top:20px}.social-wrap{align-items:flex-start;flex-direction:column}.social-links{width:100%;flex-wrap:wrap}.social-links a{flex:1;min-width:110px}.footer-main{padding:32px 0;align-items:flex-start;flex-direction:column;gap:18px}.footer-bottom{padding:16px 0;gap:12px;align-items:flex-start;flex-direction:column}}
 @media(max-width:420px){.brand-name{font-size:17px}.brand-logo{width:39px;height:39px}.hero-actions{align-items:flex-start;flex-direction:column;gap:20px}.hero-footnote{margin-top:45px;font-size:8px}.hero-visual{min-height:350px}.visual-card{width:260px;height:325px}.hero-logo{width:145px;height:145px}.floating-tag{font-size:7px}.intro-bottom{align-items:flex-start}.stamp{width:75px;height:75px}.stamp span{font-size:27px}.social-wrap h2{font-size:38px}.footer-bottom{font-size:8px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+
+
+/* Menghilangkan highlight biru saat link/tombol disentuh */
+a,
+button,
+input,
+textarea,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Menghilangkan outline bawaan browser saat interaksi */
+a:focus,
+a:active,
+button:focus,
+button:active {
+  outline: none;
+}
+
+/* Mencegah seleksi teks yang tidak disengaja pada kontrol navigasi */
+button,
+.nav-link,
+.button,
+.social-links a {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+
+/* Headline hero baru: skala adaptif untuk slogan yang lebih panjang */
+.hero h1 {
+  font-size: clamp(58px, 7.6vw, 104px);
+  line-height: .86;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 800px) {
+  .hero h1 { font-size: clamp(54px, 12.5vw, 82px); }
+}
+@media (max-width: 420px) {
+  .hero h1 { font-size: clamp(47px, 11.5vw, 62px); }
+}
