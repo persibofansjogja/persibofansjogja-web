@@ -5,20 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#101010">
   <meta name="description" content="Persibo Fans Jogja — komunitas pendukung Persibo Bojonegoro di Daerah Istimewa Yogyakarta. Satu tribun, satu suara, satu kebanggaan.">
-  <title>Persibo Fans Jogja — Satu Tribun, Satu Suara</title>
-  <link rel="icon" type="image/png" href="LogoPFJ.png">
+  <title>Persibo Fans Jogja — Dari Bumi Mataram Bersatu untuk Persibo!</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/LogoPFJ.png') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
-  <script src="script.js" defer></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <script src="{{ url_for('static', filename='js/script.js') }}" defer></script>
 </head>
 <body>
   <div class="noise" aria-hidden="true"></div>
   <header class="site-header">
     <div class="container nav-wrap">
       <a class="brand" href="#beranda" aria-label="Persibo Fans Jogja, beranda">
-        <img src="LogoPFJ.png" alt="Logo Persibo Fans Jogja" class="brand-logo">
+        <img src="{{ url_for('static', filename='images/LogoPFJ.png') }}" alt="Logo Persibo Fans Jogja" class="brand-logo">
         <span class="brand-name">PERSIBO FANS <b>JOGJA</b></span>
       </a>
 
@@ -53,7 +53,7 @@
           <div class="visual-glow"></div>
           <div class="visual-card">
             <div class="visual-top"><span>PFJ / SUPPORTER CULTURE</span><span>001—ID</span></div>
-            <img src="LogoPFJ.png" alt="Logo Persibo Fans Jogja" class="hero-logo">
+            <img src="{{ url_for('static', filename='images/LogoPFJ.png') }}" alt="Logo Persibo Fans Jogja" class="hero-logo">
             <div class="visual-bottom"><strong>ORANGE<br>IS OUR ENERGY.</strong><span>EST. / JOGJA<br>FOR PERSIBO</span></div>
           </div>
           <span class="floating-tag tag-top">LOYALTY // PRIDE</span>
@@ -69,7 +69,7 @@
         <div class="section-index">01 / TENTANG KAMI</div>
         <div class="intro-content">
           <p class="kicker">LEBIH DARI SEKADAR DUKUNGAN</p>
-          <h2>SEJAUH APA PUN<br>LANGKAH KITA, <span>MERAH PUTIH</span><br>SELALU DI HATI.</h2>
+          <h2>SEJAUH APA PUN<br>LANGKAH KITA, <span>PERSIBO</span><br>SELALU DI HATI.</h2>
           <div class="intro-bottom">
             <p>Persibo Fans Jogja (PFJ) adalah komunitas pendukung klub sepak bola Persibo Bojonegoro yang berdomisili di Daerah Istimewa Yogyakarta. Kami hadir sebagai ruang untuk berkumpul, menjaga persaudaraan, dan menyalurkan dukungan bagi Laskar Angling Dharma.</p>
             <div class="stamp"><span>PFJ</span><small>ONE FAMILY<br>ONE PRIDE</small></div>
@@ -132,7 +132,7 @@
   <footer class="site-footer">
     <div class="container footer-main">
       <a class="brand footer-brand" href="#beranda">
-        <img src="LogoPFJ.png" alt="" class="brand-logo">
+        <img src="{{ url_for('static', filename='images/LogoPFJ.png') }}" alt="" class="brand-logo">
         <span class="brand-name">PERSIBO FANS <b>JOGJA</b></span>
       </a>
       <p>Dari Bumi Mataram, bersatu untuk Persibo!<br>Salam hangat dari Yogyakarta untuk Bojonegoro.</p>
