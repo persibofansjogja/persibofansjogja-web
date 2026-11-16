@@ -761,11 +761,54 @@ def _fetch_berita_bojonegoro():
             title = soup.title.get_text(" ", strip=True)
         title = re.sub(r"\s*[|–-]\s*BeritaBojonegoro.*$", "", title, flags=re.I).strip()
 
-        main = soup.find("article") or soup.find("main") or soup
-        summary = " ".join(main.get_text(" ", strip=True).split())[:3500]
-        if not _is_persibo_relevant({"title": title, "summary": summary}):
+        # Jangan memeriksa seluruh halaman: ticker, sidebar, dan rekomendasi
+        # dapat memuat kata "Persibo" meskipun artikel utamanya tidak berkaitan.
+        description_tag = (
+            soup.find("meta", attrs={"name": "description"})
+            or soup.find("meta", property="og:description")
+        )
+        meta_description = (
+            description_tag.get("content", "").strip()
+            if description_tag else ""
+        )
+
+        article_body = (
+            soup.find("article")
+            or soup.select_one(
+                ".detail-content, .article-content, .news-detail, "
+                ".detail-news, .content-detail, .post-content"
+            )
+        )
+        if article_body:
+            paragraphs = article_body.find_all("p")
+            article_excerpt = " ".join(
+                p.get_text(" ", strip=True) for p in paragraphs[:5]
+            )
+            if not article_excerpt:
+                article_excerpt = article_body.get_text(" ", strip=True)[:1800]
+        else:
+            # Jika markup artikel tidak dikenali, gunakan deskripsi metadata saja;
+            # jangan fallback ke seluruh HTML halaman yang berisi berita sampingan.
+            article_excerpt = meta_description
+
+        relevance_text = " ".join(
+            part for part in (title, meta_description, article_excerpt) if part
+        )
+        relevance_lower = relevance_text.lower()
+        has_direct_persibo = any(
+            term in relevance_lower
+            for term in ("persibo", "laskar angling dharma", "angling dharma")
+        )
+        football_terms = (
+            "sepak bola", "sepakbola", "liga nusantara", "liga 3", "liga 2",
+            "klub", "suporter", "pemain", "pelatih", "stadion",
+            "pertandingan", "kompetisi", "kesebelasan", "persipa",
+        )
+        has_football_context = any(term in relevance_lower for term in football_terms)
+        if not (has_direct_persibo and has_football_context):
             return None
 
+        summary = " ".join(article_excerpt.split())[:420]
         published, published_parsed = _extract_article_published_date(article_url)
         # Gambar diambil belakangan hanya untuk berita terpilih, bukan setiap artikel.
         return {
