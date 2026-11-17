@@ -1044,3 +1044,41 @@ if __name__ == "__main__":
         port=port,
         debug=os.environ.get("FLASK_DEBUG") == "1"
     )
+
+
+@app.get("/test-database")
+def test_database():
+    """Protected diagnostic endpoint. Remove after verification if not needed."""
+    from flask import request, jsonify
+    import hmac
+
+    token = os.getenv("DB_TEST_TOKEN", "")
+    supplied = request.headers.get("X-DB-Test-Token", "")
+    if not token or not hmac.compare_digest(token, supplied):
+        return jsonify(status="unauthorized"), 401
+
+    url = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
+    key = (os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_PUBLISHABLE_KEY") or "").strip()
+    table = os.getenv("SUPABASE_TEST_TABLE", "").strip()
+    missing = [name for name, value in (("SUPABASE_URL", url), ("SUPABASE_KEY or SUPABASE_PUBLISHABLE_KEY", key), ("SUPABASE_TEST_TABLE", table)) if not value]
+    if missing:
+        return jsonify(connected=False, stage="configuration", missing=missing), 503
+
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", table):
+        return jsonify(connected=False, stage="configuration", error="Invalid table name"), 400
+    if not url.startswith("https://") or not url.endswith(".supabase.co"):
+        return jsonify(connected=False, stage="configuration", error="Invalid Supabase URL"), 400
+
+    try:
+        response = requests.get(
+            f"{url}/rest/v1/{table}",
+            headers={"apikey": key, "Authorization": f"Bearer {key}"},
+            params={"select": "*", "limit": "1"},
+            timeout=8,
+        )
+        if response.ok:
+            return jsonify(connected=True, stage="query", table=table, message="Supabase query successful")
+        return jsonify(connected=False, stage="query", http_status=response.status_code,
+                       message="Supabase responded but query failed; check table, API key and RLS policies"), 502
+    except requests.RequestException:
+        return jsonify(connected=False, stage="network", message="Could not reach Supabase"), 502
