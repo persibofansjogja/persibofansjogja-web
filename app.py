@@ -1046,6 +1046,12 @@ if __name__ == "__main__":
     )
 
 
+@app.get("/database-check")
+def database_check_page():
+    """Private browser page for running the protected database diagnostic."""
+    return render_template("database_check.html")
+
+
 @app.get("/test-database")
 def test_database():
     """Protected diagnostic endpoint. Remove after verification if not needed."""
