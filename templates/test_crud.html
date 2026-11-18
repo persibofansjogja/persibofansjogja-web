@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Test CRUD Sementara | Persibo Fans Jogja</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;padding:28px 16px;background:#f3f5f7;color:#17212b;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+    main{max-width:980px;margin:2vh auto}.panel{background:#fff;border:1px solid #e1e6eb;border-radius:14px;padding:22px;margin:16px 0;box-shadow:0 5px 22px #1525360a}
+    h1{font-size:26px;margin:0 0 8px}h2{font-size:18px;margin:0 0 14px}.muted{color:#5b6875;line-height:1.5}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    label{display:block;font-weight:650;margin:12px 0 6px}input,textarea{width:100%;padding:11px 12px;border:1px solid #cbd3dc;border-radius:8px;font:inherit}
+    textarea{min-height:130px;font-family:ui-monospace,monospace;font-size:13px;resize:vertical}button{border:0;border-radius:8px;padding:11px 15px;background:#173f70;color:white;font:inherit;font-weight:650;cursor:pointer;margin:8px 6px 0 0}
+    button.secondary{background:#e9eef3;color:#243444}button.danger{background:#a8322b}button:disabled{opacity:.55;cursor:wait}
+    .toolbar{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.toolbar>div{flex:1;min-width:220px}.status{padding:12px;border-radius:8px;background:#eef2f6;margin-top:14px;white-space:pre-wrap;overflow-wrap:anywhere}
+    .status.ok{background:#e9f7ee;color:#176238}.status.err{background:#fff0ef;color:#982d26}.table-wrap{overflow:auto}table{border-collapse:collapse;width:100%;font-size:14px}th,td{text-align:left;padding:10px;border-bottom:1px solid #e7ebef;vertical-align:top}td{max-width:300px;overflow-wrap:anywhere}code{font-size:12px}
+    .row-actions{white-space:nowrap}.row-actions button{font-size:12px;padding:7px 9px;margin:0 3px 3px 0}.note{font-size:13px}
+    @media(max-width:680px){.grid{grid-template-columns:1fr}.panel{padding:17px}h1{font-size:22px}}
+  </style>
+</head>
+<body>
+<main>
+  <section class="panel">
+    <h1>Halaman Test CRUD</h1>
+    <p class="muted">Halaman sementara untuk menguji Create, Read, Update, dan Delete pada tabel Supabase. Halaman ini tidak ditautkan dari navigasi utama dan dapat dihapus setelah uji coba selesai.</p>
+    <label for="token">Token pengujian (DB_TEST_TOKEN)</label>
+    <input id="token" type="password" autocomplete="off" placeholder="Masukkan token pengujian">
+    <div class="toolbar">
+      <div><button id="connect">Hubungkan & Muat Data</button></div>
+      <div class="note muted">Data yang ditampilkan dibatasi maksimal 100 baris. Gunakan tabel khusus pengujian.</div>
+    </div>
+    <div id="status" class="status" role="status" aria-live="polite">Belum terhubung.</div>
+  </section>
+
+  <section class="grid">
+    <div class="panel">
+      <h2>Create — Tambah Data</h2>
+      <label for="create-json">Data baru (JSON)</label>
+      <textarea id="create-json" spellcheck="false">{
+  "name": "Contoh data",
+  "description": "Data untuk uji CRUD"
+}</textarea>
+      <button id="create">Simpan Data</button>
+    </div>
+    <div class="panel">
+      <h2>Update — Ubah Data</h2>
+      <label for="edit-id">ID data</label>
+      <input id="edit-id" placeholder="ID baris yang akan diubah">
+      <label for="edit-json">Perubahan (JSON)</label>
+      <textarea id="edit-json" spellcheck="false">{
+  "name": "Data diperbarui"
+}</textarea>
+      <button id="update">Perbarui Data</button>
+      <p class="note muted">Klik tombol Edit pada daftar untuk mengisi ID dan data secara otomatis.</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="toolbar">
+      <div><h2>Read — Daftar Data</h2><p class="muted note">Pilih Edit untuk menyiapkan perubahan atau Hapus untuk menghapus satu baris.</p></div>
+      <div><button id="refresh" class="secondary">Muat Ulang</button></div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ID</th><th>Data</th><th>Aksi</th></tr></thead>
+        <tbody id="records"><tr><td colspan="3" class="muted">Belum ada data dimuat.</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+<script>
+  const $ = (id) => document.getElementById(id);
+  let records = [];
+  const token = () => $('token').value.trim();
+  function status(message, type='') { $('status').className = 'status ' + type; $('status').textContent = message; }
+  async function api(method, body) {
+    if (!token()) throw new Error('Masukkan token pengujian terlebih dahulu.');
+    const response = await fetch('/test-crud/api', {
+      method,
+      headers: {'X-DB-Test-Token': token(), ...(body ? {'Content-Type':'application/json'} : {})},
+      body: body ? JSON.stringify(body) : undefined,
+      cache: 'no-store'
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `Permintaan gagal (${response.status})` +
+      (data.details ? '\n' + data.details : '') +
+      (data.missing ? '\nKonfigurasi belum tersedia: ' + data.missing.join(', ') : ''));
+    return data;
+  }
+  function idOf(record) { return record.id ?? record.ID ?? ''; }
+  function render() {
+    const tbody = $('records');
+    tbody.replaceChildren();
+    if (!records.length) {
+      const tr = document.createElement('tr'), td = document.createElement('td');
+      td.colSpan = 3; td.className = 'muted'; td.textContent = 'Tabel belum memiliki data.';
+      tr.append(td); tbody.append(tr); return;
+    }
+    records.forEach(record => {
+      const tr = document.createElement('tr'), idCell = document.createElement('td');
+      const dataCell = document.createElement('td'), actionCell = document.createElement('td');
+      idCell.textContent = String(idOf(record) || '(tanpa id)');
+      const pre = document.createElement('code'); pre.textContent = JSON.stringify(record, null, 2); dataCell.append(pre);
+      actionCell.className = 'row-actions';
+      const edit = document.createElement('button'); edit.className = 'secondary'; edit.textContent = 'Edit';
+      edit.addEventListener('click', () => {
+        $('edit-id').value = idOf(record);
+        const copy = {...record}; delete copy.id; delete copy.ID;
+        $('edit-json').value = JSON.stringify(copy, null, 2);
+        $('edit-id').focus();
+      });
+      const del = document.createElement('button'); del.className = 'danger'; del.textContent = 'Hapus';
+      del.addEventListener('click', async () => {
+        if (!confirm(`Hapus data dengan ID ${idOf(record)}?`)) return;
+        try { await api('DELETE', {id:idOf(record)}); status('Data berhasil dihapus.', 'ok'); await load(); }
+        catch (e) { status(e.message, 'err'); }
+      });
+      actionCell.append(edit, del); tr.append(idCell, dataCell, actionCell); tbody.append(tr);
+    });
+  }
+  async function load() {
+    try { status('Memuat data dari Supabase...'); const data = await api('GET'); records = data.records || []; render(); status(`${records.length} baris berhasil dibaca dari Supabase.`, 'ok'); }
+    catch (e) { status(e.message, 'err'); }
+  }
+  $('connect').addEventListener('click', load);
+  $('refresh').addEventListener('click', load);
+  $('create').addEventListener('click', async () => {
+    try {
+      const payload = JSON.parse($('create-json').value);
+      await api('POST', payload); status('Data berhasil ditambahkan.', 'ok'); await load();
+    } catch (e) { status(e instanceof SyntaxError ? 'Format JSON tidak valid.' : e.message, 'err'); }
+  });
+  $('update').addEventListener('click', async () => {
+    try {
+      const id = $('edit-id').value.trim(); if (!id) throw new Error('ID data wajib diisi.');
+      const payload = JSON.parse($('edit-json').value);
+      await api('PATCH', {id, data:payload}); status('Data berhasil diperbarui.', 'ok'); await load();
+    } catch (e) { status(e instanceof SyntaxError ? 'Format JSON tidak valid.' : e.message, 'err'); }
+  });
+</script>
+</body>
+</html>
