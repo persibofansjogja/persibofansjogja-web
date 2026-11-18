@@ -13,7 +13,7 @@ import requests
 from bs4 import BeautifulSoup
 
 import feedparser
-from flask import Flask, Response, render_template, request, jsonify
+from flask import Flask, Response, render_template, request, jsonify, redirect
 
 app = Flask(__name__)
 
@@ -987,9 +987,19 @@ def get_persibo_news(limit=40):
     return selected
 
 
+ADMIN_HOST = "admin.persibofansjogja.web.id"
+
+
+def _is_admin_host():
+    """Batasi halaman dan API pengujian ke subdomain admin."""
+    return (request.host or "").split(":", 1)[0].lower() == ADMIN_HOST
+
+
 @app.get("/")
 def home():
-    """Halaman utama Persibo Fans Jogja."""
+    """Halaman utama publik atau halaman CRUD pada subdomain admin."""
+    if _is_admin_host():
+        return render_template("test_crud.html")
     return render_template("index.html")
 
 
@@ -1039,14 +1049,19 @@ def health():
 
 @app.get("/test-crud")
 def test_crud_page():
-    """Halaman sementara untuk menguji operasi CRUD Supabase."""
-    return render_template("test_crud.html")
+    """Arahkan URL lama ke root subdomain admin; jangan tampilkan di domain publik."""
+    if _is_admin_host():
+        return redirect("/", code=301)
+    return jsonify(error="Not found"), 404
 
 
 @app.route("/test-crud/api", methods=["GET", "POST", "PATCH", "DELETE"])
 def test_crud_api():
-    """API sementara CRUD Supabase; lindungi seluruh operasi dengan token."""
+    """API CRUD sementara yang hanya tersedia pada subdomain admin."""
     import hmac
+
+    if not _is_admin_host():
+        return jsonify(error="Not found"), 404
 
     token = os.getenv("DB_TEST_TOKEN", "")
     supplied = request.headers.get("X-DB-Test-Token", "")
