@@ -13,7 +13,7 @@ import requests
 from bs4 import BeautifulSoup
 
 import feedparser
-from flask import Flask, Response, render_template
+from flask import Flask, Response, render_template, request, jsonify
 
 app = Flask(__name__)
 
@@ -1037,6 +1037,98 @@ def health():
     return {"status": "ok", "app": "Persibo Fans Jogja"}
 
 
+@app.get("/test-crud")
+def test_crud_page():
+    """Halaman sementara untuk menguji operasi CRUD Supabase."""
+    return render_template("test_crud.html")
+
+
+@app.route("/test-crud/api", methods=["GET", "POST", "PATCH", "DELETE"])
+def test_crud_api():
+    """API sementara CRUD Supabase; lindungi seluruh operasi dengan token."""
+    import hmac
+
+    token = os.getenv("DB_TEST_TOKEN", "")
+    supplied = request.headers.get("X-DB-Test-Token", "")
+    if not token or not hmac.compare_digest(token, supplied):
+        return jsonify(error="Token pengujian tidak valid."), 401
+
+    url = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
+    key = (os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_PUBLISHABLE_KEY") or "").strip()
+    table = os.getenv("SUPABASE_TEST_TABLE", "").strip()
+    id_column = os.getenv("SUPABASE_TEST_ID_COLUMN", "id").strip()
+    missing = [name for name, value in (
+        ("SUPABASE_URL", url),
+        ("SUPABASE_KEY atau SUPABASE_PUBLISHABLE_KEY", key),
+        ("SUPABASE_TEST_TABLE", table),
+    ) if not value]
+    if missing:
+        return jsonify(error="Konfigurasi Supabase belum lengkap.", missing=missing), 503
+
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", table) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", id_column):
+        return jsonify(error="Nama tabel atau kolom ID tidak valid."), 400
+    if not url.startswith("https://") or not url.endswith(".supabase.co"):
+        return jsonify(error="SUPABASE_URL tidak valid."), 400
+
+    endpoint = f"{url}/rest/v1/{table}"
+    headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    try:
+        if request.method == "GET":
+            response = requests.get(
+                endpoint, headers=headers,
+                params={"select": "*", "limit": "100", "order": f"{id_column}.desc"},
+                timeout=12,
+            )
+        elif request.method == "POST":
+            payload = request.get_json(silent=True)
+            if not isinstance(payload, dict) or not payload:
+                return jsonify(error="Isi data harus berupa objek JSON."), 400
+            response = requests.post(
+                endpoint, headers={**headers, "Prefer": "return=representation"},
+                json=payload, timeout=12,
+            )
+        else:
+            payload = request.get_json(silent=True) or {}
+            record_id = payload.get("id")
+            if record_id is None or str(record_id).strip() == "":
+                return jsonify(error="ID data wajib diisi."), 400
+            params = {id_column: f"eq.{record_id}"}
+            if request.method == "PATCH":
+                changes = payload.get("data")
+                if not isinstance(changes, dict) or not changes:
+                    return jsonify(error="Data perubahan harus berupa objek JSON."), 400
+                response = requests.patch(
+                    endpoint, headers={**headers, "Prefer": "return=representation"},
+                    params=params, json=changes, timeout=12,
+                )
+            else:
+                response = requests.delete(
+                    endpoint, headers={**headers, "Prefer": "return=representation"},
+                    params=params, timeout=12,
+                )
+
+        if not response.ok:
+            return jsonify(
+                error="Supabase menolak permintaan. Periksa nama tabel, kolom ID, struktur data, dan kebijakan RLS.",
+                supabase_status=response.status_code,
+                details=response.text[:1200],
+            ), 502
+
+        if request.method == "GET":
+            return jsonify(records=response.json())
+        try:
+            return jsonify(records=response.json())
+        except ValueError:
+            return jsonify(records=[])
+    except requests.RequestException:
+        return jsonify(error="Tidak dapat menghubungi Supabase."), 502
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(
@@ -1046,45 +1138,3 @@ if __name__ == "__main__":
     )
 
 
-@app.get("/database-check")
-def database_check_page():
-    """Private browser page for running the protected database diagnostic."""
-    return render_template("database_check.html")
-
-
-@app.get("/test-database")
-def test_database():
-    """Protected diagnostic endpoint. Remove after verification if not needed."""
-    from flask import request, jsonify
-    import hmac
-
-    token = os.getenv("DB_TEST_TOKEN", "")
-    supplied = request.headers.get("X-DB-Test-Token", "")
-    if not token or not hmac.compare_digest(token, supplied):
-        return jsonify(status="unauthorized"), 401
-
-    url = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
-    key = (os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_PUBLISHABLE_KEY") or "").strip()
-    table = os.getenv("SUPABASE_TEST_TABLE", "").strip()
-    missing = [name for name, value in (("SUPABASE_URL", url), ("SUPABASE_KEY or SUPABASE_PUBLISHABLE_KEY", key), ("SUPABASE_TEST_TABLE", table)) if not value]
-    if missing:
-        return jsonify(connected=False, stage="configuration", missing=missing), 503
-
-    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", table):
-        return jsonify(connected=False, stage="configuration", error="Invalid table name"), 400
-    if not url.startswith("https://") or not url.endswith(".supabase.co"):
-        return jsonify(connected=False, stage="configuration", error="Invalid Supabase URL"), 400
-
-    try:
-        response = requests.get(
-            f"{url}/rest/v1/{table}",
-            headers={"apikey": key, "Authorization": f"Bearer {key}"},
-            params={"select": "*", "limit": "1"},
-            timeout=8,
-        )
-        if response.ok:
-            return jsonify(connected=True, stage="query", table=table, message="Supabase query successful")
-        return jsonify(connected=False, stage="query", http_status=response.status_code,
-                       message="Supabase responded but query failed; check table, API key and RLS policies"), 502
-    except requests.RequestException:
-        return jsonify(connected=False, stage="network", message="Could not reach Supabase"), 502
