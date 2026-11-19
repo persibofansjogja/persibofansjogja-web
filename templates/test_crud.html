@@ -23,10 +23,9 @@
   <section class="panel">
     <h1>Halaman Test CRUD</h1>
     <p class="muted">Halaman sementara untuk menguji Create, Read, Update, dan Delete pada tabel Supabase. Halaman ini tidak ditautkan dari navigasi utama dan dapat dihapus setelah uji coba selesai.</p>
-    <label for="token">Token pengujian (DB_TEST_TOKEN)</label>
-    <input id="token" type="password" autocomplete="off" placeholder="Masukkan token pengujian">
     <div class="toolbar">
-      <div><button id="connect">Hubungkan & Muat Data</button></div>
+      <div><button id="connect">Muat Data</button></div>
+      <div style="text-align:right"><form method="post" action="/logout"><button class="secondary" type="submit">Keluar Admin</button></form></div>
       <div class="note muted">Data yang ditampilkan dibatasi maksimal 100 baris. Gunakan tabel khusus pengujian.</div>
     </div>
     <div id="status" class="status" role="status" aria-live="polite">Belum terhubung.</div>
@@ -71,13 +70,11 @@
 <script>
   const $ = (id) => document.getElementById(id);
   let records = [];
-  const token = () => $('token').value.trim();
   function status(message, type='') { $('status').className = 'status ' + type; $('status').textContent = message; }
   async function api(method, body) {
-    if (!token()) throw new Error('Masukkan token pengujian terlebih dahulu.');
     const response = await fetch('/test-crud/api', {
       method,
-      headers: {'X-DB-Test-Token': token(), ...(body ? {'Content-Type':'application/json'} : {})},
+      headers: {...(body ? {'Content-Type':'application/json'} : {})},
       body: body ? JSON.stringify(body) : undefined,
       cache: 'no-store'
     });
