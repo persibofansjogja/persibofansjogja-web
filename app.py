@@ -998,6 +998,7 @@ def get_persibo_news(limit=40):
 
 ILEAGUE_SEASON_URL = "https://ileague.id/fixtures/index/LIGA_NUSANTARA_2026-27/3/0"
 ILEAGUE_SUMMARY_URL = "https://ileague.id/matchweek_summary/index/LIGA_NUSANTARA_2026-27"
+ILEAGUE_RESULT_PREFIX = "https://ileague.id/result/detail/"
 
 def _ileague_get(url):
     response = requests.get(
@@ -1012,8 +1013,35 @@ def _ileague_get(url):
     response.raise_for_status()
     return response
 
+def _fixture_date_from_url(url):
+    match = re.search(r"/(20\d{2}-\d{2}-\d{2})/", url or "")
+    if not match:
+        return "", ""
+    raw = match.group(1)
+    try:
+        dt = datetime.strptime(raw, "%Y-%m-%d")
+        days = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"]
+        months = ["Januari", "Februari", "Maret", "April", "Mei", "Juni",
+                  "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
+        pretty = f"{days[dt.weekday()]}, {dt.day} {months[dt.month - 1]} {dt.year}"
+        return raw, pretty
+    except ValueError:
+        return raw, raw
+
+def _fixture_teams_from_url(url):
+    # Bentuk tautan iLeague: .../tanggal/HOME_TEAM/AWAY_TEAM
+    parts = (url or "").split("/")
+    try:
+        idx = parts.index("detail")
+        home_slug, away_slug = parts[idx + 3], parts[idx + 4]
+        home = home_slug.replace("_", " ")
+        away = away_slug.replace("_", " ")
+        return home, away
+    except (ValueError, IndexError):
+        return "", ""
+
 def _get_persibo_fixtures():
-    """Ambil baris pertandingan dari halaman fixtures resmi iLeague."""
+    """Ambil fixture dari tautan detail pertandingan resmi iLeague."""
     result = {
         "matches": [], "source": ILEAGUE_SEASON_URL,
         "updated": datetime.now().strftime("%d-%m-%Y %H:%M WIB"),
@@ -1022,65 +1050,77 @@ def _get_persibo_fixtures():
     try:
         response = _ileague_get(ILEAGUE_SEASON_URL)
         soup = BeautifulSoup(response.text, "html.parser")
-        date_re = re.compile(
-            r"(?:\\b\\d{1,2}[/-]\\d{1,2}[/-]\\d{2,4}\\b|\\b\\d{1,2}\\s+(?:Jan|Feb|Mar|Apr|Mei|Jun|Jul|Agu|Sep|Okt|Nov|Des)[a-z]*\\s+\\d{4}\\b)",
-            re.I
-        )
-        rows = []
-        for tr in soup.select("tr"):
-            cells = [" ".join(c.stripped_strings) for c in tr.find_all(["th", "td"])]
-            if cells:
-                rows.append(cells)
-        # Fallback untuk layout kartu pertandingan.
-        if not rows:
-            selectors = [
-                "[class*='fixture']", "[class*='match']", "[class*='schedule']",
-                "[class*='event']", ".card"
-            ]
-            seen_nodes = set()
-            for selector in selectors:
-                for node in soup.select(selector):
-                    txt = " ".join(node.stripped_strings)
-                    if txt and id(node) not in seen_nodes:
-                        seen_nodes.add(id(node))
-                        rows.append([txt])
         matches, seen = [], set()
-        for cells in rows:
-            joined = " | ".join(cells)
-            if "persibo" not in joined.lower():
+        for link in soup.select('a[href*="/result/detail/"]'):
+            href = urljoin(response.url, link.get("href", ""))
+            if "PERSIBO_BOJONEGORO" not in href.upper():
                 continue
-            # Tolak tabel klasemen: butuh lawan/tanggal/skor, bukan hanya nomor dan nama klub.
-            date_match = date_re.search(joined)
-            score_match = re.search(r"\\b(\\d{1,2})\\s*[-:]\\s*(\\d{1,2})\\b", joined)
-            teams = [
-                c.strip() for c in cells
-                if re.search(r"[A-Za-zÀ-ÿ]{3,}", c)
-                and "persibo" not in c.lower()
-                and not date_re.search(c)
-            ]
-            if not (date_match or score_match or teams):
+            if href in seen:
                 continue
-            if len(cells) <= 3 and not (date_match or score_match):
-                continue
-            key = re.sub(r"\\W+", "", joined.lower())
-            if key in seen:
-                continue
-            seen.add(key)
-            status = "Selesai" if score_match else "Terjadwal"
+            seen.add(href)
+
+            home, away = _fixture_teams_from_url(href)
+            date_iso, date_label = _fixture_date_from_url(href)
+
+            # Ambil teks dari container terdekat yang mencakup kedua klub.
+            context = link
+            context_text = " ".join(link.stripped_strings)
+            for parent in link.parents:
+                if getattr(parent, "name", None) in ("body", "html"):
+                    break
+                candidate = " ".join(parent.stripped_strings)
+                if len(candidate) > 1200:
+                    continue
+                if "PERSIBO" in candidate.upper() and (
+                    (home and home.upper() in candidate.upper()) or
+                    (away and away.upper() in candidate.upper())
+                ):
+                    context, context_text = parent, candidate
+                    break
+
+            # Kadang teks klub terletak di elemen saudara, sehingga fallback ke link.
+            if not context_text:
+                context_text = " ".join(link.stripped_strings)
+
+            time_match = re.search(r"\b([01]?\d|2[0-3]):[0-5]\d\b", context_text)
+            venue = ""
+            for node in context.find_all(["span", "small", "p", "div"]) if hasattr(context, "find_all") else []:
+                value = " ".join(node.stripped_strings)
+                if value and len(value) < 100 and any(
+                    word in value.lower() for word in ("stadion", "gelora", "soedirman", "hang tuah", "wibawa", "kebogiro", "pasiran")
+                ):
+                    venue = value
+                    break
+            if not venue:
+                venue_match = re.search(
+                    r"(?:Letjen|Stadion|Gelora|Moch\.|Sultan|Wibawa|Kebogiro|Pasiran)[^|,]{2,90}",
+                    context_text, re.I
+                )
+                venue = venue_match.group(0).strip() if venue_match else ""
+
+            score_match = re.search(r"\b(\d{1,2})\s*[:\-]\s*(\d{1,2})\b", context_text)
+            score = f"{score_match.group(1)} - {score_match.group(2)}" if score_match else ""
             matches.append({
-                "raw": joined,
-                "cells": cells,
-                "date": date_match.group(0) if date_match else "",
-                "home": "", "away": "",
-                "opponent": teams[0] if teams else "",
-                "score": f"{score_match.group(1)} - {score_match.group(2)}" if score_match else "",
-                "status": status
+                "raw": context_text or f"{home} vs {away}",
+                "cells": [],
+                "date": date_label,
+                "date_iso": date_iso,
+                "time": time_match.group(0) if time_match else "",
+                "home": home,
+                "away": away,
+                "opponent": away if "PERSIBO" in home.upper() else home,
+                "venue": venue,
+                "score": score,
+                "status": "Selesai" if score_match else "Terjadwal",
+                "match_url": href
             })
+
+        # Urutkan secara kronologis jika tanggal tersedia.
+        matches.sort(key=lambda m: m.get("date_iso") or "9999-99-99")
         result["matches"] = matches
         if not matches:
             result["error"] = (
-                "Halaman fixtures iLeague berhasil diakses, tetapi format daftar pertandingan "
-                "belum dikenali. Gunakan endpoint diagnostik fixtures untuk memeriksa struktur HTML."
+                "Belum ditemukan tautan detail pertandingan Persibo pada halaman fixtures iLeague."
             )
     except Exception as exc:
         result["error"] = "Halaman jadwal iLeague belum dapat dimuat."
@@ -1088,41 +1128,29 @@ def _get_persibo_fixtures():
     return result
 
 def _ileague_fixtures_diagnostics():
-    """Tampilkan struktur HTML dari endpoint fixtures dan rekap pekan."""
+    """Diagnostik struktur fixture beserta tautan detail Persibo."""
     output = {"fixtures_url": ILEAGUE_SEASON_URL, "summary_url": ILEAGUE_SUMMARY_URL}
-    for key, url in (("fixtures", ILEAGUE_SEASON_URL), ("summary", ILEAGUE_SUMMARY_URL)):
-        try:
-            response = _ileague_get(url)
-            soup = BeautifulSoup(response.text, "html.parser")
-            tables = []
-            for table in soup.find_all("table")[:15]:
-                rows = []
-                for tr in table.find_all("tr")[:12]:
-                    cells = [" ".join(c.stripped_strings) for c in tr.find_all(["th", "td"])]
-                    if cells:
-                        rows.append(cells)
-                if rows:
-                    tables.append(rows)
-            # Ambil node yang teksnya mengandung Persibo, termasuk div/card.
-            persibo_nodes = []
-            for node in soup.find_all(["div", "li", "article", "section"]):
-                txt = " ".join(node.stripped_strings)
-                if "persibo" in txt.lower() and len(txt) < 1200:
-                    # Hindari duplikasi container besar yang membungkus node kecil.
-                    if not any(txt == old for old in persibo_nodes):
-                        persibo_nodes.append(txt)
-                if len(persibo_nodes) >= 25:
-                    break
-            output[key] = {
-                "http_status": response.status_code,
-                "final_url": response.url,
-                "page_title": soup.title.get_text(" ", strip=True) if soup.title else "",
-                "html_length": len(response.text),
-                "tables_preview": tables,
-                "persibo_nodes": persibo_nodes,
-            }
-        except Exception as exc:
-            output[key] = {"error": str(exc)[:300]}
+    try:
+        response = _ileague_get(ILEAGUE_SEASON_URL)
+        soup = BeautifulSoup(response.text, "html.parser")
+        links = []
+        for link in soup.select('a[href*="/result/detail/"]'):
+            href = urljoin(response.url, link.get("href", ""))
+            if "PERSIBO_BOJONEGORO" in href.upper():
+                links.append({
+                    "text": " ".join(link.stripped_strings),
+                    "href": href,
+                    "context": " ".join(link.parent.stripped_strings)[:500]
+                })
+        output["fixtures"] = {
+            "http_status": response.status_code,
+            "final_url": response.url,
+            "page_title": soup.title.get_text(" ", strip=True) if soup.title else "",
+            "html_length": len(response.text),
+            "persibo_match_links": links[:30]
+        }
+    except Exception as exc:
+        output["fixtures"] = {"error": str(exc)[:300]}
     return output
 
 
@@ -1184,10 +1212,6 @@ def jadwal():
 @app.get("/api/jadwal-persibo")
 def api_jadwal_persibo():
     return jsonify(_get_persibo_fixtures())
-
-@app.get("/api/diagnostik-ileague")
-def api_diagnostik_ileague():
-    return jsonify(_ileague_fixtures_diagnostics())
 
 @app.get("/berita")
 def berita():
