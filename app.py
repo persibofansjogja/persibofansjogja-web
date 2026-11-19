@@ -1005,7 +1005,7 @@ def _get_persibo_fixtures():
     result = {"matches": [], "source": ILEAGUE_SEASON_URL, "updated": datetime.now().strftime("%d-%m-%Y %H:%M WIB"), "error": None}
     try:
         response = requests.get(
-            ILEAGUE_SEASON_URL, timeout=18,
+            ILEAGUE_SEASON_URL, timeout=(4, 6),
             headers={"User-Agent": "Mozilla/5.0 (compatible; PersiboFansJogja/1.0)", "Accept": "text/html"}
         )
         response.raise_for_status()
