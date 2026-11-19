@@ -994,6 +994,74 @@ def get_persibo_news(limit=40):
     return selected
 
 
+
+
+ILEAGUE_SEASON_URL = "https://ileague.id/home/index/LIGA_NUSANTARA_2026-27"
+
+def _get_persibo_fixtures():
+    """Ambil baris pertandingan Persibo dari halaman resmi iLeague."""
+    import json
+    from bs4 import BeautifulSoup
+    result = {"matches": [], "source": ILEAGUE_SEASON_URL, "updated": datetime.now().strftime("%d-%m-%Y %H:%M WIB"), "error": None}
+    try:
+        response = requests.get(
+            ILEAGUE_SEASON_URL, timeout=18,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; PersiboFansJogja/1.0)", "Accept": "text/html"}
+        )
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+        rows = []
+        # Prioritaskan tabel fixture; fallback ke kartu/elemen yang memuat nama Persibo.
+        for row in soup.select("tr"):
+            cells = [" ".join(c.stripped_strings) for c in row.find_all(["th", "td"])]
+            if cells and " ".join(cells).strip():
+                rows.append(cells)
+        if not rows:
+            for node in soup.select(".match, .match-item, .fixture, .fixture-item, .game, .event, [class*='match'], [class*='fixture']"):
+                value = " ".join(node.stripped_strings)
+                if value and "persibo" in value.lower():
+                    rows.append([value])
+        matches = []
+        seen = set()
+        for cells in rows:
+            joined = " | ".join(cells)
+            if "persibo" not in joined.lower():
+                continue
+            key = re.sub(r"\W+", "", joined.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            # Buang header tabel dan baris yang hanya menyebut Persibo tanpa detail laga.
+            if len(joined) < 12:
+                continue
+            matches.append({
+                "raw": joined,
+                "cells": cells,
+                "date": next((c for c in cells if re.search(r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{1,2}\s+[A-Za-z]{3,}", c)), ""),
+                "home": "",
+                "away": "",
+                "score": "",
+                "status": ""
+            })
+        # Parser berbasis teks: tetap tampilkan data sumber apa adanya bila struktur situs berubah.
+        for item in matches:
+            text = " ".join(item["cells"])
+            teams = re.findall(r"([A-Za-zÀ-ÿ0-9 .'-]+?)\s+(?:\d{1,2}\s*[-:]\s*\d{1,2})\s+([A-Za-zÀ-ÿ0-9 .'-]+)", text)
+            score = re.search(r"\b(\d{1,2})\s*[-:]\s*(\d{1,2})\b", text)
+            if score:
+                item["score"] = f"{score.group(1)} - {score.group(2)}"
+            if teams:
+                item["home"], item["away"] = [x.strip() for x in teams[0]]
+            item["status"] = "Selesai" if score else ("Terjadwal" if item["date"] else "Detail pertandingan")
+        result["matches"] = matches
+        if not matches:
+            result["error"] = "Belum ada data pertandingan Persibo yang dapat dibaca dari halaman iLeague. Silakan buka sumber resmi untuk melihat pembaruan."
+    except Exception as exc:
+        result["error"] = "Data iLeague belum dapat dimuat saat ini. Coba muat ulang beberapa saat lagi."
+        result["detail"] = str(exc)[:240]
+    return result
+
+
 ADMIN_HOST = "admin.persibofansjogja.web.id"
 
 
@@ -1042,6 +1110,16 @@ def admin_logout():
     session.clear()
     return redirect(url_for("home"))
 
+
+
+@app.get("/jadwal")
+def jadwal():
+    """Jadwal dan hasil pertandingan Persibo pada Liga Nusantara 2026/27."""
+    return render_template("jadwal.html")
+
+@app.get("/api/jadwal-persibo")
+def api_jadwal_persibo():
+    return jsonify(_get_persibo_fixtures())
 
 @app.get("/berita")
 def berita():
