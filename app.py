@@ -1041,92 +1041,112 @@ def _fixture_teams_from_url(url):
         return "", ""
 
 def _get_persibo_fixtures():
-    """Ambil pertandingan Persibo per kartu/tautan, pisahkan waktu dari skor."""
+    """Ambil seluruh jadwal Persibo dari semua pekan Liga Nusantara."""
+    base = "https://ileague.id/fixtures/index/LIGA_NUSANTARA_2026-27"
     result = {
-        "matches": [], "source": ILEAGUE_SEASON_URL,
+        "matches": [], "source": base,
         "updated": datetime.now().strftime("%d-%m-%Y %H:%M WIB"),
         "error": None
     }
     try:
-        response = _ileague_get(ILEAGUE_SEASON_URL)
-        soup = BeautifulSoup(response.text, "html.parser")
         matches, seen = [], set()
 
-        for link in soup.select('a[href*="/result/detail/"]'):
-            href = urljoin(response.url, link.get("href", ""))
-            if "PERSIBO_BOJONEGORO" not in href.upper():
-                continue
-            if href in seen:
-                continue
-            seen.add(href)
-
-            home, away = _fixture_teams_from_url(href)
-            date_iso, date_label = _fixture_date_from_url(href)
-            if not home or not away:
+        # Grup Persibo berisi 8 klub: format kandang-tandang menghasilkan 14 pekan.
+        # Jangan hanya membaca pekan aktif (sebelumnya hanya /3/0).
+        for week in range(1, 15):
+            page_url = f"{base}/{week}/0"
+            try:
+                response = _ileague_get(page_url)
+                soup = BeautifulSoup(response.text, "html.parser")
+            except Exception:
                 continue
 
-            # Cari ancestor terkecil yang memuat kedua nama klub sekaligus.
-            context = link
-            context_text = " ".join(link.stripped_strings)
-            best_length = None
-            for parent in link.parents:
-                if getattr(parent, "name", None) in ("body", "html"):
-                    break
-                candidate = " ".join(parent.stripped_strings)
-                upper = candidate.upper()
-                if home.upper() in upper and away.upper() in upper:
-                    if best_length is None or len(candidate) < best_length:
-                        context, context_text = parent, candidate
-                        best_length = len(candidate)
-                # Setelah menemukan ancestor yang memuat dua tim, ancestor di atas
-                # umumnya lebih besar; tetap lanjut hanya untuk membandingkan parent.
-                if best_length is not None and len(candidate) > best_length * 2:
-                    break
+            for link in soup.select('a[href*="/result/detail/"]'):
+                href = urljoin(response.url, link.get("href", ""))
+                if "PERSIBO_BOJONEGORO" not in href.upper() or href in seen:
+                    continue
 
-            # Ekstrak jam dari teks kartu, bukan dari pola skor.
-            time_match = re.search(r"(?<!\d)([01]?\d|2[0-3]):([0-5]\d)(?!\d)", context_text)
-            kickoff = f"{time_match.group(1).zfill(2)}:{time_match.group(2)}" if time_match else ""
+                home, away = _fixture_teams_from_url(href)
+                date_iso, date_label = _fixture_date_from_url(href)
+                if not home or not away:
+                    continue
+                seen.add(href)
 
-            # Hanya tanda hubung yang boleh menjadi skor. Jam bertitik dua tidak pernah skor.
-            score_match = re.search(r"(?<!\d)(\d{1,2})\s+-\s+(\d{1,2})(?!\d)", context_text)
-            score = f"{score_match.group(1)} - {score_match.group(2)}" if score_match else ""
+                # Ambil konteks terdekat yang memuat kedua nama klub.
+                context_text = " ".join(link.stripped_strings)
+                best_length = None
+                for parent in link.parents:
+                    if getattr(parent, "name", None) in ("body", "html"):
+                        break
+                    candidate = " ".join(parent.stripped_strings)
+                    upper = candidate.upper()
+                    if home.upper() in upper and away.upper() in upper:
+                        if best_length is None or len(candidate) < best_length:
+                            context_text = candidate
+                            best_length = len(candidate)
+                    if best_length is not None and len(candidate) > best_length * 2:
+                        break
 
-            # Venue Persibo vs Gresik United dikonfirmasi dari data jadwal
-            # yang diberikan: Stadion Letjen H. Soedirman.
-            if (
-                home.upper() == "PERSIBO BOJONEGORO"
-                and away.upper() == "GRESIK UNITED FC"
-                and date_iso == "2026-11-22"
-            ):
-                venue = "Stadion Letjen H. Soedirman"
-            else:
-                # Kosongkan venue pertandingan lain sampai dapat dipastikan
-                # dari kartu pertandingan masing-masing.
+                # Hasil selesai pada iLeague lazimnya ditandai FT 0:0.
+                ft_match = re.search(
+                    r"\bFT\s*(\d{1,2})\s*:\s*(\d{1,2})\b",
+                    context_text, re.I
+                )
+                dash_score = re.search(
+                    r"(?<!\d)(\d{1,2})\s+-\s+(\d{1,2})(?!\d)",
+                    context_text
+                )
+                score = ""
+                if ft_match:
+                    score = f"{ft_match.group(1)} - {ft_match.group(2)}"
+                elif dash_score:
+                    score = f"{dash_score.group(1)} - {dash_score.group(2)}"
+
+                time_match = re.search(
+                    r"(?<!\d)([01]?\d|2[0-3]):([0-5]\d)(?!\d)",
+                    context_text
+                )
+                kickoff = ""
+                if time_match and not ft_match:
+                    kickoff = f"{time_match.group(1).zfill(2)}:{time_match.group(2)}"
+
+                # Venue yang sudah terkonfirmasi dari sumber iLeague.
                 venue = ""
+                if (home.upper(), away.upper(), date_iso) == (
+                    "PERSIBO BOJONEGORO", "GRESIK UNITED FC", "2026-11-22"
+                ):
+                    venue = "Stadion Letjen H. Soedirman"
+                elif (home.upper(), away.upper(), date_iso) == (
+                    "PERSIBO BOJONEGORO", "PERSIPA", "2026-11-13"
+                ):
+                    venue = "Stadion Letjen H. Soedirman"
 
-            matches.append({
-                "raw": f"{home} vs {away}",
-                "cells": [],
-                "date": date_label,
-                "date_iso": date_iso,
-                "time": kickoff,
-                "home": home,
-                "away": away,
-                "opponent": away if "PERSIBO" in home.upper() else home,
-                "venue": venue,
-                "score": score,
-                "status": "Selesai" if score_match else "Terjadwal",
-                "match_url": href
-            })
+                matches.append({
+                    "raw": f"{home} vs {away}",
+                    "cells": [],
+                    "date": date_label,
+                    "date_iso": date_iso,
+                    "time": kickoff,
+                    "home": home,
+                    "away": away,
+                    "opponent": away if "PERSIBO" in home.upper() else home,
+                    "venue": venue,
+                    "score": score,
+                    "status": "Selesai" if (ft_match or dash_score) else "Terjadwal",
+                    "match_url": href,
+                    "matchweek": week
+                })
 
-        matches.sort(key=lambda m: m.get("date_iso") or "9999-99-99")
+        matches.sort(key=lambda m: (m.get("date_iso") or "9999-99-99", m.get("matchweek", 99)))
         result["matches"] = matches
+        result["pages_checked"] = 14
         if not matches:
-            result["error"] = "Belum ditemukan tautan detail pertandingan Persibo pada halaman fixtures iLeague."
+            result["error"] = "Belum ditemukan tautan detail pertandingan Persibo pada 14 pekan jadwal iLeague."
     except Exception as exc:
         result["error"] = "Halaman jadwal iLeague belum dapat dimuat."
         result["detail"] = str(exc)[:240]
     return result
+
 
 def _ileague_fixtures_diagnostics():
     """Diagnostik struktur fixture beserta tautan detail Persibo."""
