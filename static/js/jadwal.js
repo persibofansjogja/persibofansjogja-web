@@ -13,14 +13,30 @@
   async function load(){
     status.hidden=false;status.innerHTML='<span class="loading-spinner"></span> Mengambil data dari iLeague…';refresh.disabled=true;
     try{
-      const r=await fetch('/api/jadwal-persibo',{headers:{'Accept':'application/json'}});
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      let r;
+      try {
+        r = await fetch('/api/jadwal-persibo', {
+          headers: {'Accept':'application/json'},
+          signal: controller.signal,
+          cache: 'no-store'
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
       if(!r.ok) throw new Error('HTTP '+r.status);
       const data=await r.json();matches=data.matches||[];
       updated.textContent=data.updated?'Diperbarui '+data.updated:'';
       status.hidden=matches.length>0;
       if(data.error&&!matches.length){status.textContent=data.error;}
       render();
-    }catch(e){status.textContent='Data pertandingan belum dapat dimuat. Silakan coba lagi atau buka laman resmi iLeague.';list.innerHTML='';status.hidden=false;}
+    }catch(e){
+      status.textContent = e.name === 'AbortError'
+        ? 'Permintaan data terlalu lama. Server iLeague mungkin sedang tidak merespons. Silakan coba lagi atau buka laman resmi iLeague.'
+        : 'Data pertandingan belum dapat dimuat. Periksa koneksi atau coba lagi nanti.';
+      list.innerHTML='';status.hidden=false;
+    }
     finally{refresh.disabled=false;}
   }
   document.querySelectorAll('.fixture-filter').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.fixture-filter').forEach(x=>x.classList.toggle('active',x===b));filter=b.dataset.filter;render()}));
