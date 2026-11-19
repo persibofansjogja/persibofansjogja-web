@@ -38,6 +38,13 @@
 </main>
 <footer class="site-footer"><div class="container footer-main"><a class="brand footer-brand" href="/"><img src="{{ url_for('static', filename='images/LogoPFJ.png') }}" alt="" class="brand-logo"><span class="brand-name">PERSIBO FANS <b>JOGJA</b></span></a><p>Dari Bumi Mataram, bersatu untuk Persibo!<br>Salam hangat dari Yogyakarta untuk Bojonegoro.</p><a href="#" class="back-top">KEMBALI KE ATAS ↑</a></div><div class="container footer-bottom"><span>© <span id="year"></span> Persibo Fans Jogja. All rights reserved.</span><span>MADE WITH <b>✳</b> IN YOGYAKARTA</span></div></footer>
 <script>
+/* Failsafe: tampilkan pesan jika bundle jadwal gagal dimuat/dijalankan. */
+window.setTimeout(() => {
+  const status = document.querySelector('#fixture-status');
+  if (status && !status.hidden && status.textContent.includes('Mengambil data')) {
+    status.textContent = 'Halaman belum berhasil mengambil data. Muat ulang halaman atau buka langsung sumber resmi iLeague.';
+  }
+}, 15000);
 document.querySelector('#year').textContent=new Date().getFullYear();
 const mb=document.querySelector('.menu-toggle'), nav=document.querySelector('.nav-links');
 mb?.addEventListener('click',()=>{const open=mb.getAttribute('aria-expanded')==='true';mb.setAttribute('aria-expanded',String(!open));nav.classList.toggle('open',!open)});
