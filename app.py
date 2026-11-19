@@ -996,112 +996,134 @@ def get_persibo_news(limit=40):
 
 
 
-ILEAGUE_SEASON_URL = "https://ileague.id/home/index/LIGA_NUSANTARA_2026-27"
+ILEAGUE_SEASON_URL = "https://ileague.id/fixtures/index/LIGA_NUSANTARA_2026-27/3/0"
+ILEAGUE_SUMMARY_URL = "https://ileague.id/matchweek_summary/index/LIGA_NUSANTARA_2026-27"
 
-def _fetch_ileague_page():
+def _ileague_get(url):
     response = requests.get(
-        ILEAGUE_SEASON_URL, timeout=(5, 10),
+        url, timeout=(5, 12),
         headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Referer": "https://ileague.id/home/index/LIGA_NUSANTARA_2026-27",
         }
     )
     response.raise_for_status()
     return response
 
 def _get_persibo_fixtures():
-    """Parser konservatif: jangan menganggap baris klasemen sebagai pertandingan."""
+    """Ambil baris pertandingan dari halaman fixtures resmi iLeague."""
     result = {
         "matches": [], "source": ILEAGUE_SEASON_URL,
         "updated": datetime.now().strftime("%d-%m-%Y %H:%M WIB"),
         "error": None
     }
     try:
-        response = _fetch_ileague_page()
+        response = _ileague_get(ILEAGUE_SEASON_URL)
         soup = BeautifulSoup(response.text, "html.parser")
-        date_pattern = re.compile(
+        date_re = re.compile(
             r"(?:\\b\\d{1,2}[/-]\\d{1,2}[/-]\\d{2,4}\\b|\\b\\d{1,2}\\s+(?:Jan|Feb|Mar|Apr|Mei|Jun|Jul|Agu|Sep|Okt|Nov|Des)[a-z]*\\s+\\d{4}\\b)",
             re.I
         )
+        rows = []
+        for tr in soup.select("tr"):
+            cells = [" ".join(c.stripped_strings) for c in tr.find_all(["th", "td"])]
+            if cells:
+                rows.append(cells)
+        # Fallback untuk layout kartu pertandingan.
+        if not rows:
+            selectors = [
+                "[class*='fixture']", "[class*='match']", "[class*='schedule']",
+                "[class*='event']", ".card"
+            ]
+            seen_nodes = set()
+            for selector in selectors:
+                for node in soup.select(selector):
+                    txt = " ".join(node.stripped_strings)
+                    if txt and id(node) not in seen_nodes:
+                        seen_nodes.add(id(node))
+                        rows.append([txt])
         matches, seen = [], set()
-        for row in soup.select("tr"):
-            cells = [" ".join(c.stripped_strings) for c in row.find_all(["th", "td"])]
+        for cells in rows:
             joined = " | ".join(cells)
             if "persibo" not in joined.lower():
                 continue
-            # Minimal harus ada indikasi pertandingan: tanggal, skor, atau lawan lain.
-            has_date = bool(date_pattern.search(joined))
-            score = re.search(r"\\b(\\d{1,2})\\s*[-:]\\s*(\\d{1,2})\\b", joined)
-            other_team = any(
-                "persibo" not in c.lower() and re.search(r"[A-Za-zÀ-ÿ]{3,}", c)
-                for c in cells
-            )
-            if not (has_date or score or other_team):
+            # Tolak tabel klasemen: butuh lawan/tanggal/skor, bukan hanya nomor dan nama klub.
+            date_match = date_re.search(joined)
+            score_match = re.search(r"\\b(\\d{1,2})\\s*[-:]\\s*(\\d{1,2})\\b", joined)
+            teams = [
+                c.strip() for c in cells
+                if re.search(r"[A-Za-zÀ-ÿ]{3,}", c)
+                and "persibo" not in c.lower()
+                and not date_re.search(c)
+            ]
+            if not (date_match or score_match or teams):
+                continue
+            if len(cells) <= 3 and not (date_match or score_match):
                 continue
             key = re.sub(r"\\W+", "", joined.lower())
             if key in seen:
                 continue
             seen.add(key)
+            status = "Selesai" if score_match else "Terjadwal"
             matches.append({
-                "raw": joined, "cells": cells,
-                "date": next((c for c in cells if date_pattern.search(c)), ""),
+                "raw": joined,
+                "cells": cells,
+                "date": date_match.group(0) if date_match else "",
                 "home": "", "away": "",
-                "score": f"{score.group(1)} - {score.group(2)}" if score else "",
-                "status": "Selesai" if score else "Terjadwal"
+                "opponent": teams[0] if teams else "",
+                "score": f"{score_match.group(1)} - {score_match.group(2)}" if score_match else "",
+                "status": status
             })
         result["matches"] = matches
         if not matches:
             result["error"] = (
-                "Halaman iLeague berhasil diakses, tetapi data jadwal belum ditemukan "
-                "pada HTML awal. Perlu identifikasi endpoint data pertandingan yang dipakai situs."
+                "Halaman fixtures iLeague berhasil diakses, tetapi format daftar pertandingan "
+                "belum dikenali. Gunakan endpoint diagnostik fixtures untuk memeriksa struktur HTML."
             )
     except Exception as exc:
-        result["error"] = "Data iLeague belum dapat dimuat saat ini."
+        result["error"] = "Halaman jadwal iLeague belum dapat dimuat."
         result["detail"] = str(exc)[:240]
     return result
 
-def _ileague_diagnostics():
-    """Ringkasan struktur HTML untuk menemukan endpoint jadwal yang sebenarnya."""
-    try:
-        response = _fetch_ileague_page()
-        soup = BeautifulSoup(response.text, "html.parser")
-        tables = []
-        for table in soup.find_all("table")[:12]:
-            rows = []
-            for row in table.find_all("tr")[:5]:
-                cells = [" ".join(c.stripped_strings) for c in row.find_all(["th", "td"])]
-                if cells:
-                    rows.append(cells)
-            tables.append(rows)
-        scripts = [
-            s.get("src") for s in soup.find_all("script")
-            if s.get("src")
-        ][:30]
-        interesting_inline = []
-        keywords = ("match", "fixture", "schedule", "jadwal", "pertandingan", "api/")
-        for script in soup.find_all("script"):
-            body = script.string or script.get_text() or ""
-            if body and any(k in body.lower() for k in keywords):
-                interesting_inline.append(body[:3500])
-            if len(interesting_inline) >= 8:
-                break
-        links = [
-            a.get("href") for a in soup.find_all("a", href=True)
-            if any(k in a.get("href", "").lower() for k in ("match", "fixture", "schedule", "jadwal", "api"))
-        ][:30]
-        return {
-            "http_status": response.status_code,
-            "final_url": response.url,
-            "page_title": soup.title.get_text(" ", strip=True) if soup.title else "",
-            "tables_preview": tables,
-            "script_urls": scripts,
-            "interesting_inline_scripts": interesting_inline,
-            "interesting_links": links,
-            "html_length": len(response.text),
-        }
-    except Exception as exc:
-        return {"error": str(exc)[:400]}
+def _ileague_fixtures_diagnostics():
+    """Tampilkan struktur HTML dari endpoint fixtures dan rekap pekan."""
+    output = {"fixtures_url": ILEAGUE_SEASON_URL, "summary_url": ILEAGUE_SUMMARY_URL}
+    for key, url in (("fixtures", ILEAGUE_SEASON_URL), ("summary", ILEAGUE_SUMMARY_URL)):
+        try:
+            response = _ileague_get(url)
+            soup = BeautifulSoup(response.text, "html.parser")
+            tables = []
+            for table in soup.find_all("table")[:15]:
+                rows = []
+                for tr in table.find_all("tr")[:12]:
+                    cells = [" ".join(c.stripped_strings) for c in tr.find_all(["th", "td"])]
+                    if cells:
+                        rows.append(cells)
+                if rows:
+                    tables.append(rows)
+            # Ambil node yang teksnya mengandung Persibo, termasuk div/card.
+            persibo_nodes = []
+            for node in soup.find_all(["div", "li", "article", "section"]):
+                txt = " ".join(node.stripped_strings)
+                if "persibo" in txt.lower() and len(txt) < 1200:
+                    # Hindari duplikasi container besar yang membungkus node kecil.
+                    if not any(txt == old for old in persibo_nodes):
+                        persibo_nodes.append(txt)
+                if len(persibo_nodes) >= 25:
+                    break
+            output[key] = {
+                "http_status": response.status_code,
+                "final_url": response.url,
+                "page_title": soup.title.get_text(" ", strip=True) if soup.title else "",
+                "html_length": len(response.text),
+                "tables_preview": tables,
+                "persibo_nodes": persibo_nodes,
+            }
+        except Exception as exc:
+            output[key] = {"error": str(exc)[:300]}
+    return output
 
 
 ADMIN_HOST = "admin.persibofansjogja.web.id"
@@ -1165,7 +1187,7 @@ def api_jadwal_persibo():
 
 @app.get("/api/diagnostik-ileague")
 def api_diagnostik_ileague():
-    return jsonify(_ileague_diagnostics())
+    return jsonify(_ileague_fixtures_diagnostics())
 
 @app.get("/berita")
 def berita():
