@@ -1087,28 +1087,53 @@ def _get_persibo_fixtures():
                     if best_length is not None and len(candidate) > best_length * 2:
                         break
 
-                # Hasil selesai pada iLeague lazimnya ditandai FT 0:0.
-                ft_match = re.search(
-                    r"\bFT\s*(\d{1,2})\s*:\s*(\d{1,2})\b",
-                    context_text, re.I
-                )
-                dash_score = re.search(
-                    r"(?<!\d)(\d{1,2})\s+-\s+(\d{1,2})(?!\d)",
-                    context_text
-                )
+                # Jangan mengambil skor dari teks fixture umum karena satu blok
+                # HTML dapat memuat skor/angka pertandingan lain. Verifikasi hasil
+                # hanya dari halaman detail pertandingan yang bersangkutan.
                 score = ""
-                if ft_match:
-                    score = f"{ft_match.group(1)} - {ft_match.group(2)}"
-                elif dash_score:
-                    score = f"{dash_score.group(1)} - {dash_score.group(2)}"
-
-                time_match = re.search(
-                    r"(?<!\d)([01]?\d|2[0-3]):([0-5]\d)(?!\d)",
-                    context_text
-                )
+                finished = False
                 kickoff = ""
-                if time_match and not ft_match:
-                    kickoff = f"{time_match.group(1).zfill(2)}:{time_match.group(2)}"
+                detail_text = ""
+                try:
+                    detail_response = _ileague_get(href)
+                    detail_soup = BeautifulSoup(detail_response.text, "html.parser")
+                    detail_text = " ".join(detail_soup.stripped_strings)
+
+                    # Di halaman detail iLeague skor akhir ditampilkan setelah label FT,
+                    # misalnya: FT 2 : 1. Ini menghindari salah baca 2-2 dari halaman jadwal.
+                    detail_ft = re.search(
+                        r"\bFT\s*(\d{1,2})\s*:\s*(\d{1,2})\b",
+                        detail_text, re.I
+                    )
+                    if detail_ft:
+                        score = f"{detail_ft.group(1)} - {detail_ft.group(2)}"
+                        finished = True
+
+                    kickoff_detail = re.search(
+                        r"Kick\s*Off\s*(\d{1,2}):(\d{2})\s*WIB",
+                        detail_text, re.I
+                    )
+                    if kickoff_detail:
+                        kickoff = (
+                            f"{kickoff_detail.group(1).zfill(2)}:"
+                            f"{kickoff_detail.group(2)}"
+                        )
+                except Exception:
+                    # Jika halaman detail gagal diakses, jangan menebak skor.
+                    pass
+
+                # Waktu dari kartu fixture hanya dipakai bila detail tidak
+                # menyediakan Kick Off.
+                if not kickoff:
+                    time_match = re.search(
+                        r"(?<!\d)([01]?\d|2[0-3]):([0-5]\d)(?!\d)",
+                        context_text
+                    )
+                    if time_match:
+                        kickoff = (
+                            f"{time_match.group(1).zfill(2)}:"
+                            f"{time_match.group(2)}"
+                        )
 
                 # Venue yang sudah terkonfirmasi dari sumber iLeague.
                 venue = ""
@@ -1132,7 +1157,7 @@ def _get_persibo_fixtures():
                     "opponent": away if "PERSIBO" in home.upper() else home,
                     "venue": venue,
                     "score": score,
-                    "status": "Selesai" if (ft_match or dash_score) else "Terjadwal",
+                    "status": "Selesai" if finished else "Terjadwal",
                     "match_url": href,
                     "matchweek": week
                 })
