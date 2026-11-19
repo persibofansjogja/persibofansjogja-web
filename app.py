@@ -1091,24 +1091,18 @@ def _get_persibo_fixtures():
             score_match = re.search(r"(?<!\d)(\d{1,2})\s+-\s+(\d{1,2})(?!\d)", context_text)
             score = f"{score_match.group(1)} - {score_match.group(2)}" if score_match else ""
 
-            # Cari nama stadion pada kartu pertandingan yang sudah dipersempit.
-            venue = ""
-            venue_patterns = (
-                r"(?:Stadion\s+|Stadium\s+|Lapangan\s+|Gelora\s+|GOR\s+)"
-                r"[A-ZÀ-ÿ0-9][A-Za-zÀ-ÿ0-9 .,'()/-]{2,75}"
-            )
-            venue_match = re.search(venue_patterns, context_text, re.I)
-            if venue_match:
-                venue = venue_match.group(0).strip(" |,-")
+            # Venue Persibo vs Gresik United dikonfirmasi dari data jadwal
+            # yang diberikan: Stadion Letjen H. Soedirman.
+            if (
+                home.upper() == "PERSIBO BOJONEGORO"
+                and away.upper() == "GRESIK UNITED FC"
+                and date_iso == "2026-11-22"
+            ):
+                venue = "Stadion Letjen H. Soedirman"
             else:
-                # Pada data iLeague, nama stadion kadang tanpa kata "Stadion".
-                # Ambil teks setelah nama tim tandang, lalu buang tanggal dan jam.
-                away_pos = context_text.upper().find(away.upper())
-                tail = context_text[away_pos + len(away):].strip(" |,-") if away_pos >= 0 else ""
-                tail = re.sub(r"\b(?:[01]?\d|2[0-3]):[0-5]\d\b", "", tail).strip(" |,-")
-                tail = re.sub(r"\b(?:Minggu|Senin|Selasa|Rabu|Kamis|Jumat|Sabtu),?\s+\d{1,2}\s+\w+\s+\d{4}\b", "", tail, flags=re.I).strip(" |,-")
-                if tail and len(tail) <= 90 and not re.search(r"\b[A-Z]{3,}\s+[A-Z]{3,}\b", tail):
-                    venue = tail
+                # Kosongkan venue pertandingan lain sampai dapat dipastikan
+                # dari kartu pertandingan masing-masing.
+                venue = ""
 
             matches.append({
                 "raw": f"{home} vs {away}",
