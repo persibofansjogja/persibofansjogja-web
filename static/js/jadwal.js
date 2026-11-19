@@ -7,38 +7,25 @@
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   function render(){
     const visible = matches.filter(m => filter === 'all' || m.status === filter);
-    if(!visible.length){
-      list.innerHTML='<div class="fixture-empty"><span>✳</span><h3>BELUM ADA PERTANDINGAN</h3><p>Tidak ada data untuk kategori ini.</p></div>';
-      return;
-    }
-    list.innerHTML=visible.map((m,i)=>{
-      const teams = (m.home && m.away)
-        ? `<div class="fixture-teams"><strong>${esc(m.home)}</strong><span>VS</span><strong>${esc(m.away)}</strong></div>`
-        : `<div class="fixture-raw">${esc(m.raw)}</div>`;
-      const details = [m.time ? `${esc(m.time)} WIB` : '', m.venue ? esc(m.venue) : ''].filter(Boolean).join(' · ');
-      const card = `<article class="fixture-card">
-        <div class="fixture-number">${String(i+1).padStart(2,'0')}</div>
-        <div class="fixture-main">
-          <div class="fixture-meta"><span>${esc(m.date || 'Tanggal belum tersedia')}</span><span class="fixture-status-tag ${m.status==='Selesai'?'done':''}">${esc(m.status || 'Info')}</span></div>
-          ${teams}
-          ${details ? `<div class="fixture-details">${details}</div>` : ''}
-        </div>
-        <div class="fixture-result">${m.score?`<strong class="fixture-score">${esc(m.score)}</strong>`:'<span class="fixture-vs">VS</span>'}
-          ${m.match_url?`<a class="fixture-detail-link" href="${esc(m.match_url)}" target="_blank" rel="noopener noreferrer">DETAIL ↗</a>`:''}
-        </div>
-      </article>`;
-      return card;
-    }).join('');
+    if(!visible.length){list.innerHTML='<div class="fixture-empty"><span>✳</span><h3>BELUM ADA PERTANDINGAN</h3><p>Tidak ada data untuk kategori ini.</p></div>';return;}
+    list.innerHTML=visible.map((m,i)=>`<article class="fixture-card"><div class="fixture-number">${String(i+1).padStart(2,'0')}</div><div class="fixture-main"><div class="fixture-meta"><span>${esc(m.date || 'Tanggal belum tersedia')}</span><span class="fixture-status-tag ${m.status==='Selesai'?'done':''}">${esc(m.status || 'Info')}</span></div><div class="fixture-raw">${esc(m.raw)}</div></div>${m.score?`<div class="fixture-score">${esc(m.score)}</div>`:'<div class="fixture-vs">VS</div>'}</article>`).join('');
   }
   async function load(){
     status.hidden=false;status.innerHTML='<span class="loading-spinner"></span> Mengambil data dari iLeague…';refresh.disabled=true;
     try{
       const r=await fetch('/api/jadwal-persibo',{headers:{'Accept':'application/json'}});
       if(!r.ok) throw new Error('HTTP '+r.status);
-      const data=await r.json();matches=data.matches||[];
+      const data=await r.json();
+      matches=Array.isArray(data.matches)?data.matches:[];
       updated.textContent=data.updated?'Diperbarui '+data.updated:'';
-      status.hidden=matches.length>0;
-      if(data.error&&!matches.length){status.textContent=data.error;}
+      if(matches.length){
+        status.textContent='';
+        status.innerHTML='';
+        status.hidden=true;
+      } else {
+        status.textContent=data.error || 'Belum ada data pertandingan yang dapat ditampilkan.';
+        status.hidden=false;
+      }
       render();
     }catch(e){status.textContent='Data pertandingan belum dapat dimuat. Silakan coba lagi atau buka laman resmi iLeague.';list.innerHTML='';status.hidden=false;}
     finally{refresh.disabled=false;}
