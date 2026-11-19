@@ -13,9 +13,16 @@ import requests
 from bs4 import BeautifulSoup
 
 import feedparser
-from flask import Flask, Response, render_template, request, jsonify, redirect
+from flask import Flask, Response, render_template, request, jsonify, redirect, session, url_for
 
 app = Flask(__name__)
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "")
+app.config.update(
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    PERMANENT_SESSION_LIFETIME=__import__("datetime").timedelta(hours=8),
+)
 
 # Berita diambil langsung dari RSS penerbit dan arsip resmi; Google News tidak digunakan.
 RSS_FEEDS = [
@@ -995,12 +1002,45 @@ def _is_admin_host():
     return (request.host or "").split(":", 1)[0].lower() == ADMIN_HOST
 
 
-@app.get("/")
+@app.route("/", methods=["GET", "POST"])
 def home():
-    """Halaman utama publik atau halaman CRUD pada subdomain admin."""
-    if _is_admin_host():
+    """Halaman login admin; dashboard CRUD hanya tampil setelah login."""
+    if not _is_admin_host():
+        return render_template("index.html")
+
+    if request.method == "POST":
+        import hmac
+        username = os.getenv("ADMIN_USERNAME", "")
+        password = os.getenv("ADMIN_PASSWORD", "")
+        secret = os.getenv("FLASK_SECRET_KEY", "")
+        supplied_user = request.form.get("username", "")
+        supplied_password = request.form.get("password", "")
+        if not username or not password or not secret:
+            return render_template(
+                "admin_login.html",
+                error="Konfigurasi login belum lengkap. Hubungi administrator."
+            ), 503
+        if (hmac.compare_digest(supplied_user, username)
+                and hmac.compare_digest(supplied_password, password)):
+            session.clear()
+            session["admin_authenticated"] = True
+            session.permanent = True
+            return redirect(url_for("home"))
+        return render_template(
+            "admin_login.html", error="Username atau password salah."
+        ), 401
+
+    if session.get("admin_authenticated"):
         return render_template("test_crud.html")
-    return render_template("index.html")
+    return render_template("admin_login.html")
+
+
+@app.post("/logout")
+def admin_logout():
+    if not _is_admin_host():
+        return jsonify(error="Not found"), 404
+    session.clear()
+    return redirect(url_for("home"))
 
 
 @app.get("/berita")
@@ -1058,15 +1098,10 @@ def test_crud_page():
 @app.route("/test-crud/api", methods=["GET", "POST", "PATCH", "DELETE"])
 def test_crud_api():
     """API CRUD sementara yang hanya tersedia pada subdomain admin."""
-    import hmac
-
     if not _is_admin_host():
         return jsonify(error="Not found"), 404
-
-    token = os.getenv("DB_TEST_TOKEN", "")
-    supplied = request.headers.get("X-DB-Test-Token", "")
-    if not token or not hmac.compare_digest(token, supplied):
-        return jsonify(error="Token pengujian tidak valid."), 401
+    if not session.get("admin_authenticated"):
+        return jsonify(error="Sesi admin berakhir. Silakan login kembali."), 401
 
     url = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
     key = (os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_PUBLISHABLE_KEY") or "").strip()
