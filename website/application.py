@@ -1,6 +1,6 @@
 import os
 import re
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
@@ -17,20 +17,9 @@ from bs4 import BeautifulSoup
 import feedparser
 from flask import Flask, Response, render_template, request, jsonify, redirect, session, url_for
 
-app = Flask(__name__)
-_is_vercel = os.getenv("VERCEL") == "1"
-_is_production = _is_vercel or os.getenv("FLASK_ENV", "").lower() == "production"
-_secret_key = os.getenv("FLASK_SECRET_KEY", "").strip()
-if _is_production and not _secret_key:
-    raise RuntimeError("FLASK_SECRET_KEY wajib diatur pada environment production.")
-# Kunci sementara hanya untuk pengembangan lokal; selalu gunakan secret permanen di production.
-app.secret_key = _secret_key or secrets.token_hex(32)
-app.config.update(
-    SESSION_COOKIE_SECURE=_is_production,
-    SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE="Lax",
-    PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
-)
+from .config import configure_app
+
+app = configure_app(Flask(__name__))
 
 # Berita diambil langsung dari RSS penerbit dan arsip resmi; Google News tidak digunakan.
 RSS_FEEDS = [
