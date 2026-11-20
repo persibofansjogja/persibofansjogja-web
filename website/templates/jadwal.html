@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101010">
+  <meta name="description" content="Jadwal dan hasil pertandingan Persibo Bojonegoro di Liga Nusantara musim 2026/27.">
+  <title>Jadwal & Hasil Persibo Bojonegoro 2026/27 | Persibo Fans Jogja</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/LogoPFJ.png') }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <script src="{{ url_for('static', filename='js/jadwal.js') }}?v=20261120-statusfix" defer></script>
+</head>
+<body>
+<div class="noise" aria-hidden="true"></div>
+<header class="site-header"><div class="container nav-wrap">
+  <a class="brand" href="/"><img src="{{ url_for('static', filename='images/LogoPFJ.png') }}" alt="Logo Persibo Fans Jogja" class="brand-logo"><span class="brand-name">PERSIBO FANS <b>JOGJA</b></span></a>
+  <button class="menu-toggle" aria-label="Buka menu navigasi" aria-expanded="false" aria-controls="primary-nav"><span></span><span></span><span></span></button>
+  <nav class="nav-links" id="primary-nav"><a href="/" class="nav-link">Beranda</a><a href="/berita" class="nav-link">Berita</a><a href="/jadwal" class="nav-link active">Jadwal & Hasil</a><a href="/#gabung" class="nav-link nav-cta">Gabung Komunitas <span>↗</span></a></nav>
+</div></header>
+<main class="fixtures-page">
+  <section class="fixtures-hero"><div class="container">
+    <p class="eyebrow"><span class="live-dot"></span> LASKAR ANGLING DHARMA • MUSIM 2026/27</p>
+    <h1>JADWAL <span>& HASIL.</span></h1>
+    <p class="fixtures-lead">Ikuti perjalanan Persibo Bojonegoro di Liga Nusantara. Jadwal dan hasil ditarik dari laman resmi iLeague.</p>
+    <div class="season-strip"><span>LIGA NUSANTARA</span><b>2026 / 2027</b><span class="season-mark">PERSIBO BOJONEGORO</span></div>
+  </div></section>
+  <section class="fixtures-content container">
+    <div class="fixtures-heading"><div><p class="kicker">PERJALANAN MUSIM INI</p><h2>PERTANDINGAN <span>PERSIBO</span></h2></div><button id="refresh-fixtures" class="news-refresh" type="button">↻ MUAT ULANG</button></div>
+    <div class="fixture-filters" role="group" aria-label="Filter pertandingan">
+      <button class="fixture-filter active" data-filter="all">SEMUA</button><button class="fixture-filter" data-filter="Selesai">HASIL</button><button class="fixture-filter" data-filter="Terjadwal">JADWAL</button>
+    </div>
+    <div id="fixture-status" class="fixture-status" aria-live="polite"><span class="loading-spinner"></span> Mengambil data dari iLeague…</div>
+    <div id="fixture-list" class="fixture-list"></div>
+    <div class="fixture-source">SUMBER DATA: <a href="https://ileague.id/home/index/LIGA_NUSANTARA_2026-27" target="_blank" rel="noopener noreferrer">iLeague — Liga Nusantara 2026/27 ↗</a><span id="fixture-updated"></span></div>
+    <div class="fixture-note">Informasi pertandingan mengikuti pembaruan dari penyelenggara. Jika struktur data iLeague berubah atau server sumber sedang tidak tersedia, kunjungi laman resmi melalui tautan di atas.</div>
+  </section>
+</main>
+<footer class="site-footer"><div class="container footer-main"><a class="brand footer-brand" href="/"><img src="{{ url_for('static', filename='images/LogoPFJ.png') }}" alt="" class="brand-logo"><span class="brand-name">PERSIBO FANS <b>JOGJA</b></span></a><p>Dari Bumi Mataram, bersatu untuk Persibo!<br>Salam hangat dari Yogyakarta untuk Bojonegoro.</p><a href="#" class="back-top">KEMBALI KE ATAS ↑</a></div><div class="container footer-bottom"><span>© <span id="year"></span> Persibo Fans Jogja. All rights reserved.</span><span>MADE WITH <b>✳</b> IN YOGYAKARTA</span></div></footer>
+<script>
+document.querySelector('#year').textContent=new Date().getFullYear();
+const mb=document.querySelector('.menu-toggle'), nav=document.querySelector('.nav-links');
+mb?.addEventListener('click',()=>{const open=mb.getAttribute('aria-expanded')==='true';mb.setAttribute('aria-expanded',String(!open));nav.classList.toggle('open',!open)});
+</script>
+</body></html>

@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#101010">
+  <meta name="description" content="Kumpulan berita terbaru Persibo Bojonegoro dari berbagai media online. Ikuti kabar Laskar Angling Dharma bersama Persibo Fans Jogja.">
+  <title>Berita Persibo Bojonegoro | Persibo Fans Jogja</title>
+  <link rel="canonical" href="https://www.persibofansjogja.web.id/berita">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Persibo Fans Jogja">
+  <meta property="og:title" content="Berita Persibo Bojonegoro | Persibo Fans Jogja">
+  <meta property="og:description" content="Kumpulan berita Persibo Bojonegoro dari berbagai media online.">
+  <meta property="og:url" content="https://www.persibofansjogja.web.id/berita">
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/LogoPFJ.png') }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <script src="{{ url_for('static', filename='js/script.js') }}" defer></script>
+</head>
+<body>
+  <div class="noise" aria-hidden="true"></div>
+  <header class="site-header">
+    <div class="container nav-wrap">
+      <a class="brand" href="/" aria-label="Persibo Fans Jogja, beranda">
+        <img src="{{ url_for('static', filename='images/LogoPFJ.png') }}" alt="Logo Persibo Fans Jogja" class="brand-logo">
+        <span class="brand-name">PERSIBO FANS <b>JOGJA</b></span>
+      </a>
+      <button class="menu-toggle" aria-label="Buka menu navigasi" aria-expanded="false" aria-controls="primary-nav">
+        <span></span><span></span><span></span>
+      </button>
+      <nav class="nav-links" id="primary-nav" aria-label="Navigasi utama">
+        <a href="/" class="nav-link">Beranda</a>
+        <a href="/#tentang" class="nav-link">Tentang</a>
+        <a href="/berita" class="nav-link active">Berita</a>
+        <a href="/#gabung" class="nav-link nav-cta">Gabung Komunitas <span>↗</span></a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="news-page">
+    <section class="news-hero">
+      <div class="container">
+        <p class="eyebrow"><span class="live-dot"></span> UPDATE SEPAK BOLA • PERSIBO BOJONEGORO</p>
+        <h1>KABAR <span>PERSIBO.</span></h1>
+        <p class="news-intro">Satu tempat untuk mengikuti kabar Laskar Angling Dharma dari berbagai media online.</p>
+        <div class="news-meta"><span class="news-pulse"></span> DIPERBARUI DARI RSS FEED</div>
+      </div>
+    </section>
+
+    <section class="news-content container">
+      <div class="news-heading">
+        <div>
+          <p class="kicker">KABAR TERKINI</p>
+          <h2>BERITA <span>PERSIBO</span></h2>
+        </div>
+        <a class="news-refresh" href="/berita">↻ MUAT ULANG</a>
+      </div>
+
+      {% if articles %}
+      <div class="news-grid">
+        {% for article in articles %}
+        <article class="news-card">
+          {% if article.image %}
+          <a class="news-card-image" href="{{ article.link }}" target="_blank" rel="noopener noreferrer" aria-label="Buka berita: {{ article.title }}">
+            <img src="{{ article.image }}" alt="Gambar berita: {{ article.title }}" loading="lazy" referrerpolicy="no-referrer">
+          </a>
+          {% endif %}
+          <div class="news-card-top">
+            <span class="news-source">{{ article.source }}</span>
+            <span class="news-date">{{ article.published }}</span>
+          </div>
+          <h3><a href="{{ article.link }}" target="_blank" rel="noopener noreferrer">{{ article.title }}</a></h3>
+          {% if article.summary %}
+          <p>{{ article.summary[:260] }}{% if article.summary|length > 260 %}…{% endif %}</p>
+          {% else %}
+          <p>Baca informasi selengkapnya melalui media penerbit berita.</p>
+          {% endif %}
+          <a class="news-read" href="{{ article.link }}" target="_blank" rel="noopener noreferrer">BACA BERITA ASLI <span>↗</span></a>
+        </article>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="news-empty">
+        <span class="empty-mark">!</span>
+        <h3>BERITA BELUM DAPAT DIMUAT</h3>
+        <p>Feed berita sedang tidak merespons atau belum ada artikel yang tersedia. Silakan coba beberapa saat lagi.</p>
+        <a class="button button-primary" href="/berita">Coba lagi <span>↻</span></a>
+      </div>
+      {% endif %}
+
+      <p class="news-disclaimer">Berita dikumpulkan otomatis dari RSS Google News. Judul, ringkasan, dan tautan mengarah ke media penerbit masing-masing. Hak cipta konten tetap milik penerbit asli.</p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-main">
+      <a class="brand footer-brand" href="/">
+        <img src="{{ url_for('static', filename='images/LogoPFJ.png') }}" alt="" class="brand-logo">
+        <span class="brand-name">PERSIBO FANS <b>JOGJA</b></span>
+      </a>
+      <p>Dari Bumi Mataram, bersatu untuk Persibo!<br>Salam hangat dari Yogyakarta untuk Bojonegoro.</p>
+      <a href="#" class="back-top">KEMBALI KE ATAS ↑</a>
+    </div>
+    <div class="container footer-bottom">
+      <span>© <span id="year"></span> Persibo Fans Jogja. All rights reserved.</span>
+      <span>MADE WITH <b>✳</b> IN YOGYAKARTA</span>
+    </div>
+  </footer>
+</body>
+</html>
