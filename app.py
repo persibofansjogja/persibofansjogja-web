@@ -1067,6 +1067,8 @@ def _get_persibo_fixtures():
                     continue
 
                 home, away = _fixture_teams_from_url(href)
+                home = (home or "").strip()
+                away = (away or "").strip()
                 date_iso, date_label = _fixture_date_from_url(href)
                 if not home or not away:
                     continue
@@ -1164,6 +1166,14 @@ def _get_persibo_fixtures():
                     "PERSIBO BOJONEGORO", "PERSIPA", "2026-11-13"
                 ):
                     venue = "Stadion Letjen H. Soedirman"
+
+                # Normalisasi aman: hilangkan awalan "Stadion" yang terduplikasi
+                # dan jangan tampilkan 00:00 sebagai jam kick-off jika sumber
+                # tidak menyediakan waktu pertandingan.
+                venue = re.sub(r"^(?:Stadion\\s+){2,}", "Stadion ", venue, flags=re.I)
+                venue = re.sub(r"\\s+", " ", venue).strip(" ,") if venue else ""
+                if kickoff == "00:00":
+                    kickoff = ""
 
                 matches.append({
                     "raw": f"{home} vs {away}",
