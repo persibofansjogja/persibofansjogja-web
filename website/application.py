@@ -8,6 +8,8 @@ from urllib.parse import urljoin, urlparse
 import ipaddress
 import socket
 import time
+import secrets
+import hmac
 
 import requests
 from bs4 import BeautifulSoup
@@ -16,12 +18,18 @@ import feedparser
 from flask import Flask, Response, render_template, request, jsonify, redirect, session, url_for
 
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET_KEY", "")
+_is_vercel = os.getenv("VERCEL") == "1"
+_is_production = _is_vercel or os.getenv("FLASK_ENV", "").lower() == "production"
+_secret_key = os.getenv("FLASK_SECRET_KEY", "").strip()
+if _is_production and not _secret_key:
+    raise RuntimeError("FLASK_SECRET_KEY wajib diatur pada environment production.")
+# Kunci sementara hanya untuk pengembangan lokal; selalu gunakan secret permanen di production.
+app.secret_key = _secret_key or secrets.token_hex(32)
 app.config.update(
-    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_SECURE=_is_production,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
-    PERMANENT_SESSION_LIFETIME=__import__("datetime").timedelta(hours=8),
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
 )
 
 # Berita diambil langsung dari RSS penerbit dan arsip resmi; Google News tidak digunakan.
@@ -1237,6 +1245,20 @@ def _is_admin_host():
     return (request.host or "").split(":", 1)[0].lower() == ADMIN_HOST
 
 
+def _csrf_token():
+    token = session.get("csrf_token")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session["csrf_token"] = token
+    return token
+
+
+def _valid_csrf_token():
+    expected = session.get("csrf_token", "")
+    supplied = request.form.get("csrf_token", "") or request.headers.get("X-CSRF-Token", "")
+    return bool(expected and supplied and hmac.compare_digest(expected, supplied))
+
+
 @app.route("/", methods=["GET", "POST"])
 def home():
     """Halaman login admin; dashboard CRUD hanya tampil setelah login."""
@@ -1244,7 +1266,8 @@ def home():
         return render_template("index.html")
 
     if request.method == "POST":
-        import hmac
+        if not _valid_csrf_token():
+            return render_template("admin_login.html", error="Sesi formulir tidak valid. Muat ulang halaman lalu coba kembali."), 400
         username = os.getenv("ADMIN_USERNAME", "")
         password = os.getenv("ADMIN_PASSWORD", "")
         secret = os.getenv("FLASK_SECRET_KEY", "")
@@ -1253,27 +1276,31 @@ def home():
         if not username or not password or not secret:
             return render_template(
                 "admin_login.html",
-                error="Konfigurasi login belum lengkap. Hubungi administrator."
+                error="Konfigurasi login belum lengkap. Hubungi administrator.",
+                csrf_token=_csrf_token(),
             ), 503
         if (hmac.compare_digest(supplied_user, username)
                 and hmac.compare_digest(supplied_password, password)):
             session.clear()
             session["admin_authenticated"] = True
             session.permanent = True
+            _csrf_token()
             return redirect(url_for("home"))
         return render_template(
-            "admin_login.html", error="Username atau password salah."
+            "admin_login.html", error="Username atau password salah.", csrf_token=_csrf_token()
         ), 401
 
     if session.get("admin_authenticated"):
-        return render_template("test_crud.html")
-    return render_template("admin_login.html")
+        return render_template("test_crud.html", csrf_token=_csrf_token())
+    return render_template("admin_login.html", csrf_token=_csrf_token())
 
 
 @app.post("/logout")
 def admin_logout():
     if not _is_admin_host():
         return jsonify(error="Not found"), 404
+    if not _valid_csrf_token():
+        return jsonify(error="Token CSRF tidak valid."), 400
     session.clear()
     return redirect(url_for("home"))
 
@@ -1321,6 +1348,11 @@ def sitemap():
     <changefreq>hourly</changefreq>
     <priority>0.8</priority>
   </url>
+  <url>
+    <loc>https://www.persibofansjogja.web.id/jadwal</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
+  </url>
 </urlset>
 """
     return Response(body, mimetype="application/xml")
@@ -1347,6 +1379,8 @@ def test_crud_api():
         return jsonify(error="Not found"), 404
     if not session.get("admin_authenticated"):
         return jsonify(error="Sesi admin berakhir. Silakan login kembali."), 401
+    if request.method in {"POST", "PATCH", "DELETE"} and not _valid_csrf_token():
+        return jsonify(error="Token CSRF tidak valid."), 400
 
     url = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
     key = (os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_PUBLISHABLE_KEY") or "").strip()
