@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex,nofollow">
+  <meta name="csrf-token" content="{{ csrf_token }}">
   <title>Test CRUD Sementara | Persibo Fans Jogja</title>
   <style>
     *{box-sizing:border-box}body{margin:0;padding:28px 16px;background:#f3f5f7;color:#17212b;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
@@ -25,7 +26,7 @@
     <p class="muted">Halaman sementara untuk menguji Create, Read, Update, dan Delete pada tabel Supabase. Halaman ini tidak ditautkan dari navigasi utama dan dapat dihapus setelah uji coba selesai.</p>
     <div class="toolbar">
       <div><button id="connect">Muat Data</button></div>
-      <div style="text-align:right"><form method="post" action="/logout"><button class="secondary" type="submit">Keluar Admin</button></form></div>
+      <div style="text-align:right"><form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="secondary" type="submit">Keluar Admin</button></form></div>
       <div class="note muted">Data yang ditampilkan dibatasi maksimal 100 baris. Gunakan tabel khusus pengujian.</div>
     </div>
     <div id="status" class="status" role="status" aria-live="polite">Belum terhubung.</div>
@@ -74,7 +75,10 @@
   async function api(method, body) {
     const response = await fetch('/test-crud/api', {
       method,
-      headers: {...(body ? {'Content-Type':'application/json'} : {})},
+      headers: {
+        ...(body ? {'Content-Type':'application/json'} : {}),
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+      },
       body: body ? JSON.stringify(body) : undefined,
       cache: 'no-store'
     });

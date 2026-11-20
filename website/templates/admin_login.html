@@ -35,6 +35,7 @@
     <p>Masuk untuk mengakses panel administrasi Persibo Fans Jogja.</p>
     {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
     <form method="post" action="/" autocomplete="on">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label for="username">Username</label>
       <input id="username" name="username" type="text" autocomplete="username" required autofocus>
       <label for="password">Password</label>
