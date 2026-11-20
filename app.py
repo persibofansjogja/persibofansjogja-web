@@ -1093,6 +1093,7 @@ def _get_persibo_fixtures():
                 score = ""
                 finished = False
                 kickoff = ""
+                venue = ""
                 detail_text = ""
                 try:
                     detail_response = _ileague_get(href)
@@ -1109,15 +1110,33 @@ def _get_persibo_fixtures():
                         score = f"{detail_ft.group(1)} - {detail_ft.group(2)}"
                         finished = True
 
+                    # Waktu kick-off di halaman detail ditampilkan sebagai
+                    # "Kick Off 15:30 WIB". Longgarkan spasi/line break HTML.
                     kickoff_detail = re.search(
-                        r"Kick\s*Off\s*(\d{1,2}):(\d{2})\s*WIB",
+                        r"Kick\s*Off\s*[:：]?\s*(\d{1,2})\s*:\s*(\d{2})",
                         detail_text, re.I
                     )
+                    if not kickoff_detail:
+                        kickoff_detail = re.search(
+                            r"(\d{1,2})\s*:\s*(\d{2})\s*WIB",
+                            detail_text, re.I
+                        )
                     if kickoff_detail:
                         kickoff = (
                             f"{kickoff_detail.group(1).zfill(2)}:"
                             f"{kickoff_detail.group(2)}"
                         )
+
+                    # Stadion berada tepat di bawah tanggal pada halaman detail,
+                    # contohnya "Stadion Letjen H. Soedirman , Bojonegoro".
+                    venue_detail = re.search(
+                        r"\b(Stadion\s+[^,|]+)",
+                        detail_text, re.I
+                    )
+                    if venue_detail:
+                        venue = re.sub(
+                            r"\s+", " ", venue_detail.group(1)
+                        ).strip(" ,")
                 except Exception:
                     # Jika halaman detail gagal diakses, jangan menebak skor.
                     pass
@@ -1135,13 +1154,13 @@ def _get_persibo_fixtures():
                             f"{time_match.group(2)}"
                         )
 
-                # Venue yang sudah terkonfirmasi dari sumber iLeague.
-                venue = ""
-                if (home.upper(), away.upper(), date_iso) == (
+                # Gunakan venue hasil halaman detail. Tambahkan fallback hanya
+                # untuk pertandingan yang sudah terkonfirmasi sebelumnya.
+                if not venue and (home.upper(), away.upper(), date_iso) == (
                     "PERSIBO BOJONEGORO", "GRESIK UNITED FC", "2026-11-22"
                 ):
                     venue = "Stadion Letjen H. Soedirman"
-                elif (home.upper(), away.upper(), date_iso) == (
+                if not venue and (home.upper(), away.upper(), date_iso) == (
                     "PERSIBO BOJONEGORO", "PERSIPA", "2026-11-13"
                 ):
                     venue = "Stadion Letjen H. Soedirman"
