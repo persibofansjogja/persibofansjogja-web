@@ -1,3 +1,5 @@
-from app import app
+"""Vercel Python Function entry point for the Flask application."""
 
-# Vercel akan menjalankan objek Flask ini sebagai Python Function.
+from website import app
+
+# Vercel detects and serves this WSGI application.
