@@ -18,7 +18,8 @@
   {% include 'components/header.html' %}
   {% block content %}{% endblock %}
   {% include 'components/footer.html' %}
-  <script src="{{ url_for('static', filename='js/script.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/navigation.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/site.js') }}" defer></script>
   {% block page_scripts %}{% endblock %}
 </body>
 </html>
