@@ -28,5 +28,24 @@ def configure_app(app):
         SESSION_COOKIE_SAMESITE="Lax",
         PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
         SEND_FILE_MAX_AGE_DEFAULT=timedelta(hours=1),
+        MAX_CONTENT_LENGTH=1 * 1024 * 1024,
     )
+
+    @app.after_request
+    def add_security_headers(response):
+        """Add low-risk browser security headers to every application response."""
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "camera=(), microphone=(), geolocation=()",
+        )
+        if is_production:
+            response.headers.setdefault(
+                "Strict-Transport-Security",
+                "max-age=31536000",
+            )
+        return response
+
     return app
