@@ -1,0 +1,14 @@
+<footer class="site-footer">
+  <div class="container footer-main">
+    <a class="brand footer-brand" href="{{ '#beranda' if page_key == 'home' else '/' }}">
+      <img src="{{ url_for('static', filename='images/LogoPFJ.png') }}" alt="" class="brand-logo">
+      <span class="brand-name">PERSIBO FANS <b>JOGJA</b></span>
+    </a>
+    <p>Dari Bumi Mataram, bersatu untuk Persibo!<br>Salam hangat dari Yogyakarta untuk Bojonegoro.</p>
+    <a href="{{ '#beranda' if page_key == 'home' else '#' }}" class="back-top">KEMBALI KE ATAS ↑</a>
+  </div>
+  <div class="container footer-bottom">
+    <span>© <span id="year"></span> Persibo Fans Jogja. All rights reserved.</span>
+    <span>MADE WITH <b>✳</b> IN YOGYAKARTA</span>
+  </div>
+</footer>
