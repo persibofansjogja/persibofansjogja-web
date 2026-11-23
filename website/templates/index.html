@@ -1,10 +1,8 @@
-<!DOCTYPE html>
-<html lang="id">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+{% extends "base.html" %}
+{% set page_key = 'home' %}
+{% block title %}Persibo Fans Jogja | Komunitas Suporter Persibo di Yogyakarta{% endblock %}
+{% block head_meta %}
   <meta name="google-site-verification" content="AQ0qF_tvyDXte3u8wG6WcYRx9USZXhlcagb0_3exGqs">
-  <meta name="theme-color" content="#101010">
   <link rel="canonical" href="https://www.persibofansjogja.web.id/">
   <meta name="robots" content="index, follow, max-image-preview:large">
   <meta property="og:locale" content="id_ID">
@@ -19,6 +17,7 @@
   <meta name="twitter:title" content="Persibo Fans Jogja | Komunitas Suporter Persibo di Yogyakarta">
   <meta name="twitter:description" content="Dari Bumi Mataram Bersatu untuk Persibo!">
   <meta name="twitter:image" content="https://www.persibofansjogja.web.id/static/images/LogoPFJ.png">
+  <meta name="description" content="Persibo Fans Jogja adalah komunitas pendukung Persibo Bojonegoro di Daerah Istimewa Yogyakarta. Dari Bumi Mataram Bersatu untuk Persibo!">
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -35,40 +34,9 @@
     ]
   }
   </script>
-  <meta name="description" content="Persibo Fans Jogja adalah komunitas pendukung Persibo Bojonegoro di Daerah Istimewa Yogyakarta. Dari Bumi Mataram Bersatu untuk Persibo!">
-  <title>Persibo Fans Jogja | Komunitas Suporter Persibo di Yogyakarta</title>
-  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/LogoPFJ.png') }}">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-  <script src="{{ url_for('static', filename='js/script.js') }}" defer></script>
-</head>
-<body>
-  <div class="noise" aria-hidden="true"></div>
-  <header class="site-header">
-    <div class="container nav-wrap">
-      <a class="brand" href="#beranda" aria-label="Persibo Fans Jogja, beranda">
-        <img src="{{ url_for('static', filename='images/LogoPFJ.png') }}" alt="Logo Persibo Fans Jogja" class="brand-logo">
-        <span class="brand-name">PERSIBO FANS <b>JOGJA</b></span>
-      </a>
-
-      <button class="menu-toggle" aria-label="Buka menu navigasi" aria-expanded="false" aria-controls="primary-nav">
-        <span></span><span></span><span></span>
-      </button>
-
-      <nav class="nav-links" id="primary-nav" aria-label="Navigasi utama">
-        <a href="#beranda" class="nav-link active">Beranda</a>
-        <a href="#tentang" class="nav-link">Tentang</a>
-        <a href="/berita" class="nav-link">Berita</a>
-        <a href="/jadwal" class="nav-link">Jadwal &amp; Hasil</a>
-        <a href="#nilai" class="nav-link">Semangat Kami</a>
-        <a href="#gabung" class="nav-link nav-cta">Gabung Komunitas <span>↗</span></a>
-      </nav>
-    </div>
-  </header>
-
-  <main>
+{% endblock %}
+{% block content %}
+<main>
     <section class="hero" id="beranda">
       <div class="hero-grid container">
         <div class="hero-copy">
@@ -160,18 +128,6 @@
         </div>
       </div>
     </section>
-  </main>
-
-  <footer class="site-footer">
-    <div class="container footer-main">
-      <a class="brand footer-brand" href="#beranda">
-        <img src="{{ url_for('static', filename='images/LogoPFJ.png') }}" alt="" class="brand-logo">
-        <span class="brand-name">PERSIBO FANS <b>JOGJA</b></span>
-      </a>
-      <p>Dari Bumi Mataram, bersatu untuk Persibo!<br>Salam hangat dari Yogyakarta untuk Bojonegoro.</p>
-      <a href="#beranda" class="back-top">KEMBALI KE ATAS ↑</a>
-    </div>
-    <div class="container footer-bottom"><span>© <span id="year"></span> Persibo Fans Jogja. All rights reserved.</span><span>MADE WITH <b>✳</b> IN YOGYAKARTA</span></div>
-  </footer>
-</body>
-</html>
+  
+</main>
+{% endblock %}
