@@ -15,9 +15,12 @@ create table if not exists public.fixtures (
     status text not null default 'Terjadwal',
     matchweek integer,
     source text not null default 'ileague',
+    manual_override boolean not null default false,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
+
+alter table public.fixtures add column if not exists manual_override boolean not null default false;
 
 create index if not exists fixtures_date_iso_idx on public.fixtures (date_iso);
 create index if not exists fixtures_status_idx on public.fixtures (status);
