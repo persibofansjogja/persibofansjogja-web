@@ -19,12 +19,12 @@
     }).join('');
   }
   async function load(){
-    status.hidden=false;status.innerHTML='<span class="loading-spinner"></span> Mengambil data dari iLeague…';refresh.disabled=true;
+    status.hidden=false;status.innerHTML='<span class="loading-spinner"></span> Memuat arsip jadwal dan hasil pertandingan…';refresh.disabled=true;
     try{
       const r=await fetch('/api/jadwal-persibo',{headers:{'Accept':'application/json'}});
       if(!r.ok) throw new Error('HTTP '+r.status);
       const data=await r.json();matches=data.matches||[];
-      updated.textContent=data.updated?'Diperbarui '+data.updated:'';
+      updated.textContent=data.updated?'Arsip diperbarui '+data.updated:'';
       status.hidden=matches.length>0;
       if(data.error&&!matches.length){status.textContent=data.error;}
       render();
