@@ -7,7 +7,7 @@ from ..services.fixtures import sync_persibo_fixtures
 sync_bp = Blueprint("fixtures_sync", __name__)
 
 
-@sync_bp.post("/api/cron/sync-fixtures")
+@sync_bp.route("/api/cron/sync-fixtures", methods=["GET", "POST"])
 def sync_fixtures_cron():
     expected = os.getenv("CRON_SECRET", "").strip()
     supplied = request.headers.get("Authorization", "")
