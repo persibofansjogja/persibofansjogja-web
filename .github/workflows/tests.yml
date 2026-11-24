@@ -23,7 +23,9 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Run tests
+        working-directory: ${{ github.workspace }}
         env:
           FLASK_ENV: testing
           FLASK_SECRET_KEY: ci-only-test-secret
-        run: pytest -q
+          PYTHONPATH: ${{ github.workspace }}
+        run: python -m pytest -q
