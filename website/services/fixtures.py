@@ -4,7 +4,8 @@ import os
 import re
 import time
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from threading import Lock
 from urllib.parse import urljoin
 
@@ -236,6 +237,129 @@ def _supabase_config():
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", table):
         return None
     return url, key, table
+
+
+
+
+SYNC_STATE_TABLE = "fixture_sync_state"
+JAKARTA_TZ = ZoneInfo("Asia/Jakarta")
+
+
+def _sync_state_request(method="GET", row=None):
+    """Read/write the singleton auto-sync state using the server-side key."""
+    config = _supabase_config()
+    if not config:
+        raise RuntimeError("Konfigurasi Supabase belum tersedia.")
+    url, key, _ = config
+    endpoint = f"{url}/rest/v1/{SYNC_STATE_TABLE}"
+    headers = _supabase_headers(
+        key,
+        "resolution=merge-duplicates,return=representation" if method == "POST" else None,
+    )
+    if method == "GET":
+        response = requests.get(
+            endpoint, headers=headers,
+            params={"select": "*", "id": "eq.1", "limit": "1"}, timeout=10,
+        )
+    else:
+        response = requests.post(
+            endpoint, headers=headers, params={"on_conflict": "id"},
+            json=[row], timeout=10,
+        )
+    _check_supabase_response(response, f"{method} {SYNC_STATE_TABLE}")
+    if method == "GET":
+        payload = response.json()
+        return payload[0] if isinstance(payload, list) and payload else None
+    payload = response.json() if response.content else []
+    return payload[0] if isinstance(payload, list) and payload else row
+
+
+def get_fixture_auto_sync_state():
+    """Return last automatic/manual sync state for the admin dashboard."""
+    try:
+        return _sync_state_request("GET")
+    except Exception as exc:
+        return {"last_status": "unknown", "last_message": str(exc)[:300], "state_error": True}
+
+
+def _next_fixture_and_interval(now=None):
+    """Choose polling interval based on the next scheduled Persibo kickoff (WIB)."""
+    now = now or datetime.now(JAKARTA_TZ)
+    archive = _load_saved_fixtures() or {}
+    upcoming = []
+    for match in archive.get("matches", []):
+        status = (match.get("status") or "").strip().lower()
+        if status in {"selesai", "dibatalkan", "cancelled", "finished"}:
+            continue
+        raw_date = (match.get("date_iso") or "").strip()
+        if not raw_date:
+            continue
+        raw_time = (match.get("time") or "23:59").strip()
+        try:
+            kickoff = datetime.strptime(
+                f"{raw_date} {raw_time[:5]}", "%Y-%m-%d %H:%M"
+            ).replace(tzinfo=JAKARTA_TZ)
+        except ValueError:
+            continue
+        upcoming.append(kickoff)
+
+    future = [kickoff for kickoff in upcoming if kickoff >= now - timedelta(hours=3)]
+    next_match = min(future) if future else None
+    if next_match is None:
+        return None, 720
+    delta_minutes = (next_match - now).total_seconds() / 60
+    if -180 <= delta_minutes <= 180:
+        interval = 15
+    elif delta_minutes <= 24 * 60:
+        interval = 30
+    elif delta_minutes <= 72 * 60:
+        interval = 60
+    else:
+        interval = 360
+    return next_match, interval
+
+
+def fixture_auto_sync_due(now=None):
+    """Return (due, interval, state) and throttle GitHub's 15-minute polling."""
+    now = now or datetime.now(JAKARTA_TZ)
+    state = _sync_state_request("GET")
+    _, interval = _next_fixture_and_interval(now)
+    if not state or not state.get("last_checked_at"):
+        return True, interval, state
+    try:
+        last = datetime.fromisoformat(state["last_checked_at"].replace("Z", "+00:00"))
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        elapsed = (now.astimezone(timezone.utc) - last.astimezone(timezone.utc)).total_seconds() / 60
+    except (TypeError, ValueError):
+        return True, interval, state
+    # Failed runs retry in 15 minutes rather than waiting for the normal cadence.
+    required = 15 if state.get("last_status") == "failed" else interval
+    return elapsed >= required, interval, state
+
+
+def record_fixture_sync_state(status, message="", source="automatic", interval_minutes=None,
+                              found=0, saved=0, skipped_manual=0, now=None):
+    """Persist monitoring metadata without touching the fixture archive."""
+    now = now or datetime.now(JAKARTA_TZ)
+    if interval_minutes is None:
+        _, interval_minutes = _next_fixture_and_interval(now)
+    next_run = now + timedelta(minutes=15 if status == "failed" else interval_minutes)
+    row = {
+        "id": 1,
+        "last_checked_at": now.astimezone(timezone.utc).isoformat(),
+        "last_status": status,
+        "last_source": source,
+        "last_message": (message or "")[:500],
+        "next_run_at": next_run.astimezone(timezone.utc).isoformat(),
+        "interval_minutes": int(interval_minutes),
+        "found_count": int(found or 0),
+        "saved_count": int(saved or 0),
+        "skipped_manual": int(skipped_manual or 0),
+        "updated_at": now.astimezone(timezone.utc).isoformat(),
+    }
+    _sync_state_request("POST", row)
+    return row
 
 
 def _supabase_headers(key, prefer=None):
