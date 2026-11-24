@@ -25,7 +25,8 @@
       <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="secondary" type="submit">Keluar Admin</button></form>
     </div>
     <div class="topline"><button id="sync">Ambil Data Terbaru dari iLeague</button><button id="reload" class="secondary">Muat Arsip</button><span id="last-updated" class="muted hint"></span></div>
-    <div id="status" class="status" role="status" aria-live="polite">Siap. Sinkronisasi hanya berjalan ketika tombol ditekan.</div>
+    <div id="status" class="status" role="status" aria-live="polite">Siap. Sinkronisasi manual tersedia; pembaruan otomatis dipantau melalui GitHub Actions.</div>
+    <div id="auto-sync-info" class="status" aria-live="polite">Status sinkronisasi otomatis akan dimuat dari Supabase.</div>
   </section>
 
   <section class="panel">
@@ -82,7 +83,11 @@
     });
   }
   async function load(){
-    try{say('Memuat arsip Supabase…');const data=await api('/fixtures-admin/api');fixtures=data.matches||[];$('last-updated').textContent=data.updated?`Terakhir dibaca: ${data.updated}`:'';render();say('Arsip berhasil dimuat.','ok');}
+    try{say('Memuat arsip Supabase…');const data=await api('/fixtures-admin/api');fixtures=data.matches||[];$('last-updated').textContent=data.updated?`Terakhir dibaca: ${data.updated}`:'';
+      const auto=data.auto_sync||{};
+      const autoStatus=auto.last_status==='success'?'Berhasil':auto.last_status==='failed'?'Gagal':auto.last_status==='unknown'?'Belum tersedia':'Belum ada sinkronisasi';
+      $('auto-sync-info').textContent=`Sinkronisasi otomatis: ${autoStatus} | Metode: ${auto.last_source||'—'} | Terakhir: ${auto.last_checked_at||'—'} | Berikutnya: ${auto.next_run_at||'—'} | Interval adaptif: ${auto.interval_minutes?auto.interval_minutes+' menit':'—'}${auto.last_message?' | Catatan: '+auto.last_message:''}`;
+      render();say('Arsip berhasil dimuat.','ok');}
     catch(error){say(error.message,'err');}
   }
   function edit(item){
