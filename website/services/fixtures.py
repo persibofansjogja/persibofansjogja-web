@@ -1,5 +1,6 @@
 """iLeague fixture retrieval and normalization services."""
 
+import os
 import re
 import time
 from copy import deepcopy
@@ -225,25 +226,143 @@ def _fetch_persibo_fixtures():
     return result
 
 
+def _supabase_config():
+    """Return server-side Supabase REST configuration, if enabled."""
+    url = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
+    key = (os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY") or "").strip()
+    table = os.getenv("SUPABASE_FIXTURES_TABLE", "fixtures").strip()
+    if not url or not key or not url.startswith("https://"):
+        return None
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", table):
+        return None
+    return url, key, table
+
+
+def _supabase_headers(key, prefer=None):
+    headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    if prefer:
+        headers["Prefer"] = prefer
+    return headers
+
+
+def _load_saved_fixtures():
+    """Read the permanent archive; return None when persistence is not configured."""
+    config = _supabase_config()
+    if not config:
+        return None
+    url, key, table = config
+    response = requests.get(
+        f"{url}/rest/v1/{table}",
+        headers=_supabase_headers(key),
+        params={"select": "*", "order": "date_iso.asc", "limit": "2000"},
+        timeout=12,
+    )
+    response.raise_for_status()
+    records = response.json()
+    matches = []
+    for row in records if isinstance(records, list) else []:
+        item = {k: row.get(k) for k in (
+            "raw", "date", "date_iso", "time", "home", "away", "opponent",
+            "venue", "score", "status", "match_url", "matchweek"
+        )}
+        item["cells"] = []
+        matches.append(item)
+    matches.sort(key=lambda m: (m.get("date_iso") or "9999-99-99", m.get("matchweek") or 99))
+    return {
+        "matches": matches,
+        "source": ILEAGUE_SEASON_URL,
+        "updated": datetime.now().strftime("%d-%m-%Y %H:%M WIB"),
+        "error": None,
+        "storage": "supabase",
+        "archived": True,
+    }
+
+
+def _save_fixtures(matches):
+    """Upsert observed fixtures. Missing source rows are deliberately never deleted."""
+    config = _supabase_config()
+    if not config or not matches:
+        return 0
+    url, key, table = config
+    rows = []
+    for match in matches:
+        match_url = (match.get("match_url") or "").strip()
+        if not match_url:
+            continue
+        rows.append({
+            "match_url": match_url,
+            "raw": match.get("raw", ""),
+            "date": match.get("date", ""),
+            "date_iso": match.get("date_iso", ""),
+            "time": match.get("time", ""),
+            "home": match.get("home", ""),
+            "away": match.get("away", ""),
+            "opponent": match.get("opponent", ""),
+            "venue": match.get("venue", ""),
+            "score": match.get("score", ""),
+            "status": match.get("status", "Terjadwal"),
+            "matchweek": match.get("matchweek"),
+            "source": "ileague",
+        })
+    if not rows:
+        return 0
+    response = requests.post(
+        f"{url}/rest/v1/{table}",
+        headers=_supabase_headers(key, "resolution=merge-duplicates,return=minimal"),
+        params={"on_conflict": "match_url"},
+        json=rows,
+        timeout=15,
+    )
+    response.raise_for_status()
+    return len(rows)
+
+
+def sync_persibo_fixtures():
+    """Fetch source and persist any observed rows; never clear the archive."""
+    result = _fetch_persibo_fixtures()
+    if result.get("matches") and not result.get("error"):
+        try:
+            result["saved_count"] = _save_fixtures(result["matches"])
+            result["storage"] = "supabase" if _supabase_config() else "memory-only"
+        except requests.RequestException as exc:
+            result["storage_error"] = str(exc)[:240]
+    return result
+
+
 def _get_persibo_fixtures():
-    """Ambil jadwal dari cache 5 menit sebelum melakukan scraping ulang."""
+    """Prefer the permanent archive; scrape and seed it only when it is empty."""
     global _FIXTURES_CACHE, _FIXTURES_CACHE_AT
+
+    if _supabase_config():
+        try:
+            saved = _load_saved_fixtures()
+            if saved and saved.get("matches"):
+                return saved
+        except requests.RequestException:
+            # Continue to the best available source/cache if Supabase is temporarily down.
+            pass
 
     now = time.monotonic()
     with _FIXTURES_CACHE_LOCK:
-        if (
-            _FIXTURES_CACHE is not None
-            and now - _FIXTURES_CACHE_AT < _FIXTURES_CACHE_TTL
-        ):
+        if _FIXTURES_CACHE is not None and now - _FIXTURES_CACHE_AT < _FIXTURES_CACHE_TTL:
             return deepcopy(_FIXTURES_CACHE)
 
-        result = _fetch_persibo_fixtures()
-
-        # Jangan cache respons kosong/error agar kegagalan sumber tidak menetap.
+        result = sync_persibo_fixtures()
         if result.get("matches") and not result.get("error"):
             _FIXTURES_CACHE = deepcopy(result)
             _FIXTURES_CACHE_AT = time.monotonic()
+            return result
 
+        # If source is empty/unavailable, return any previously cached successful snapshot.
+        if _FIXTURES_CACHE is not None:
+            fallback = deepcopy(_FIXTURES_CACHE)
+            fallback["error"] = result.get("error") or "Sumber jadwal sementara tidak tersedia."
+            return fallback
         return result
 
 
