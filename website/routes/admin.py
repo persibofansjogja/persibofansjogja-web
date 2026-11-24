@@ -10,7 +10,8 @@ from flask import Blueprint, jsonify, redirect, render_template, request, sessio
 
 from ..services.fixtures import (
     _load_saved_fixtures, _supabase_config, _upsert_admin_fixture,
-    sync_persibo_fixtures,
+    sync_persibo_fixtures, get_fixture_auto_sync_state,
+    fixture_auto_sync_due, record_fixture_sync_state,
 )
 from ..services.supabase_crud import handle_test_crud
 from ..utils.security import csrf_token, valid_csrf_token
@@ -80,7 +81,10 @@ def fixtures_admin_api():
     if request.method == "GET":
         try:
             data = _load_saved_fixtures() or {"matches": []}
-            return jsonify(matches=data.get("matches", []), updated=data.get("updated"))
+            return jsonify(
+                matches=data.get("matches", []), updated=data.get("updated"),
+                auto_sync=get_fixture_auto_sync_state(),
+            )
         except Exception as exc:
             return jsonify(error="Arsip Supabase tidak dapat dibaca.", details=str(exc)[:200]), 502
 
@@ -145,26 +149,69 @@ def fixtures_admin_sync():
     if not _supabase_config():
         return jsonify(error="Konfigurasi Supabase arsip belum lengkap."), 503
     result = sync_persibo_fixtures()
-    if result.get("error") or not result.get("matches"):
-        return jsonify(
-            error=result.get("error") or "iLeague tidak mengembalikan data pertandingan.",
-            archived_data_preserved=True,
-        ), 502
-    if result.get("storage_error"):
-        # The detailed response is also returned to the authenticated admin UI.
-        # Do not log request headers or environment values (they contain secrets).
-        logger.warning("Manual fixture sync storage failure: %s", result["storage_error"])
-        return jsonify(
-            error="Data sumber berhasil dibaca tetapi gagal disimpan ke Supabase.",
-            details=result["storage_error"],
-            archived_data_preserved=True,
-        ), 502
+    if result.get("error") or not result.get("matches") or result.get("storage_error"):
+        message = result.get("storage_error") or result.get("error") or "iLeague tidak mengembalikan data pertandingan."
+        try:
+            record_fixture_sync_state("failed", message, source="manual")
+        except Exception:
+            pass
+        return jsonify(error=message, archived_data_preserved=True), 502
+    try:
+        record_fixture_sync_state(
+            "success", "Sinkronisasi manual berhasil.", source="manual",
+            found=len(result["matches"]), saved=result.get("saved_count", 0),
+            skipped_manual=result.get("skipped_manual", 0),
+        )
+    except Exception:
+        pass
     return jsonify(
         ok=True, found=len(result["matches"]), saved=result.get("saved_count", 0),
         skipped_manual=result.get("skipped_manual", 0), updated=result.get("updated"),
         message="Sinkronisasi selesai. Arsip lama yang tidak ditemukan di sumber tetap dipertahankan.",
     )
 
+
+@admin_bp.post("/api/fixtures-auto-sync")
+def fixtures_auto_sync():
+    """Authenticated machine endpoint called by GitHub Actions."""
+    expected = os.getenv("GITHUB_SYNC_TOKEN", "").strip()
+    supplied = request.headers.get("Authorization", "")
+    if not expected or not hmac.compare_digest(supplied, f"Bearer {expected}"):
+        return jsonify(error="Unauthorized"), 401
+    if not _supabase_config():
+        return jsonify(error="Konfigurasi Supabase arsip belum lengkap."), 503
+    try:
+        due, interval, state = fixture_auto_sync_due()
+        if not due:
+            return jsonify(
+                ok=True, skipped=True, reason="Belum waktunya sinkronisasi adaptif.",
+                interval_minutes=interval,
+                next_run_at=(state or {}).get("next_run_at"),
+            )
+        result = sync_persibo_fixtures()
+        if result.get("error") or not result.get("matches") or result.get("storage_error"):
+            message = result.get("storage_error") or result.get("error") or "iLeague tidak mengembalikan data."
+            record_fixture_sync_state("failed", message, source="github_actions",
+                                      interval_minutes=interval)
+            return jsonify(error=message, archived_data_preserved=True), 502
+        state_row = record_fixture_sync_state(
+            "success", "Sinkronisasi otomatis berhasil.", source="github_actions",
+            interval_minutes=interval, found=len(result["matches"]),
+            saved=result.get("saved_count", 0), skipped_manual=result.get("skipped_manual", 0),
+        )
+        return jsonify(
+            ok=True, skipped=False, found=len(result["matches"]),
+            saved=result.get("saved_count", 0),
+            skipped_manual=result.get("skipped_manual", 0),
+            interval_minutes=interval, next_run_at=state_row.get("next_run_at"),
+        )
+    except Exception as exc:
+        try:
+            record_fixture_sync_state("failed", str(exc)[:500], source="github_actions")
+        except Exception:
+            pass
+        return jsonify(error="Sinkronisasi otomatis gagal.", details=str(exc)[:500],
+                       archived_data_preserved=True), 502
 
 @admin_bp.get("/test-crud")
 def test_crud_page():
