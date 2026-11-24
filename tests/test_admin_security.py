@@ -55,7 +55,7 @@ def test_admin_login_accepts_valid_credentials(client, monkeypatch):
     assert response.status_code == 302
     dashboard = client.get("/", headers={"Host": ADMIN_HOST})
     assert dashboard.status_code == 200
-    assert b"Test CRUD Sementara" in dashboard.data
+    assert b"Arsip Jadwal & Hasil" in dashboard.data
 
 
 def test_crud_api_requires_admin_session(client):
@@ -125,3 +125,20 @@ def test_admin_logout_requires_csrf_and_clears_session(client, monkeypatch):
     assert logged_out.status_code == 302
     login_page = client.get("/", headers={"Host": ADMIN_HOST})
     assert b"Login Admin" in login_page.data
+
+
+def test_fixture_admin_api_requires_admin_session(client):
+    response = client.get("/fixtures-admin/api", headers={"Host": ADMIN_HOST})
+    assert response.status_code == 401
+
+def test_fixture_manual_sync_requires_csrf(client, monkeypatch):
+    _login(client, monkeypatch)
+    response = client.post("/fixtures-admin/sync", headers={"Host": ADMIN_HOST})
+    assert response.status_code == 400
+
+def test_fixture_admin_api_is_not_exposed_on_public_host(client):
+    response = client.get(
+        "/fixtures-admin/api",
+        headers={"Host": "www.persibofansjogja.web.id"},
+    )
+    assert response.status_code == 404
