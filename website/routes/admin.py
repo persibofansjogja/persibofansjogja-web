@@ -1,5 +1,6 @@
 """Admin-only routes for login, manual fixture sync, and archive editing."""
 import hmac
+import logging
 import os
 import re
 import uuid
@@ -15,6 +16,7 @@ from ..services.supabase_crud import handle_test_crud
 from ..utils.security import csrf_token, valid_csrf_token
 
 admin_bp = Blueprint("admin", __name__)
+logger = logging.getLogger(__name__)
 ADMIN_HOST = "admin.persibofansjogja.web.id"
 FIXTURE_FIELDS = {"date", "date_iso", "time", "home", "away", "venue", "score", "status", "matchweek"}
 
@@ -149,7 +151,14 @@ def fixtures_admin_sync():
             archived_data_preserved=True,
         ), 502
     if result.get("storage_error"):
-        return jsonify(error="Data sumber berhasil dibaca tetapi gagal disimpan ke Supabase.", details=result["storage_error"]), 502
+        # The detailed response is also returned to the authenticated admin UI.
+        # Do not log request headers or environment values (they contain secrets).
+        logger.warning("Manual fixture sync storage failure: %s", result["storage_error"])
+        return jsonify(
+            error="Data sumber berhasil dibaca tetapi gagal disimpan ke Supabase.",
+            details=result["storage_error"],
+            archived_data_preserved=True,
+        ), 502
     return jsonify(
         ok=True, found=len(result["matches"]), saved=result.get("saved_count", 0),
         skipped_manual=result.get("skipped_manual", 0), updated=result.get("updated"),
