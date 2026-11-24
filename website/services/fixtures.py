@@ -250,6 +250,25 @@ def _supabase_headers(key, prefer=None):
     return headers
 
 
+def _check_supabase_response(response, operation):
+    """Raise an actionable error while keeping credentials out of diagnostics."""
+    if response.ok:
+        return
+    try:
+        payload = response.json()
+        detail = payload.get("message") or payload.get("details") or payload.get("hint") or str(payload)
+        code = payload.get("code")
+    except (ValueError, AttributeError):
+        detail = (response.text or "").strip()[:1200]
+        code = None
+    parts = [f"Supabase {operation} gagal (HTTP {response.status_code})"]
+    if code:
+        parts.append(f"kode={code}")
+    if detail:
+        parts.append(f"detail={str(detail)[:1200]}")
+    raise RuntimeError("; ".join(parts))
+
+
 def _load_saved_fixtures():
     """Read the permanent archive; return None when persistence is not configured."""
     config = _supabase_config()
@@ -299,7 +318,7 @@ def _save_fixtures(matches):
         params={"select": "match_url", "manual_override": "eq.true", "limit": "2000"},
         timeout=12,
     )
-    protected_response.raise_for_status()
+    _check_supabase_response(protected_response, "membaca override manual")
     protected = {
         row.get("match_url") for row in protected_response.json()
         if isinstance(row, dict) and row.get("match_url")
@@ -338,7 +357,7 @@ def _save_fixtures(matches):
         json=rows,
         timeout=15,
     )
-    response.raise_for_status()
+    _check_supabase_response(response, "menyimpan arsip pertandingan")
     return len(rows)
 
 
@@ -388,14 +407,14 @@ def sync_persibo_fixtures():
                     f"{url}/rest/v1/{table}", headers=_supabase_headers(key),
                     params={"select": "match_url", "manual_override": "eq.true", "limit": "2000"}, timeout=12,
                 )
-                protected_response.raise_for_status()
+                _check_supabase_response(protected_response, "membaca override manual")
                 protected_urls = {r.get("match_url") for r in protected_response.json() if isinstance(r, dict)}
                 protected_count = sum(1 for m in result["matches"] if m.get("match_url") in protected_urls)
             result["saved_count"] = _save_fixtures(result["matches"])
             result["skipped_manual"] = protected_count
             result["storage"] = "supabase" if _supabase_config() else "memory-only"
-        except requests.RequestException as exc:
-            result["storage_error"] = str(exc)[:240]
+        except Exception as exc:
+            result["storage_error"] = str(exc)[:1600]
     return result
 
 
