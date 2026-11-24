@@ -265,10 +265,11 @@ def _load_saved_fixtures():
     response.raise_for_status()
     records = response.json()
     matches = []
-    for row in records if isinstance(records, list) else []:
+    record_rows = records if isinstance(records, list) else []
+    for row in record_rows:
         item = {k: row.get(k) for k in (
             "raw", "date", "date_iso", "time", "home", "away", "opponent",
-            "venue", "score", "status", "match_url", "matchweek"
+            "venue", "score", "status", "match_url", "matchweek", "manual_override"
         )}
         item["cells"] = []
         matches.append(item)
@@ -276,7 +277,7 @@ def _load_saved_fixtures():
     return {
         "matches": matches,
         "source": ILEAGUE_SEASON_URL,
-        "updated": datetime.now().strftime("%d-%m-%Y %H:%M WIB"),
+        "updated": max((row.get("updated_at", "") for row in record_rows if isinstance(row, dict)), default=""),
         "error": None,
         "storage": "supabase",
         "archived": True,
@@ -289,10 +290,28 @@ def _save_fixtures(matches):
     if not config or not matches:
         return 0
     url, key, table = config
+    # Respect rows explicitly edited by an administrator. They remain archived
+    # and are not overwritten by a later iLeague import.
+    protected = set()
+    protected_response = requests.get(
+        f"{url}/rest/v1/{table}",
+        headers=_supabase_headers(key),
+        params={"select": "match_url", "manual_override": "eq.true", "limit": "2000"},
+        timeout=12,
+    )
+    protected_response.raise_for_status()
+    protected = {
+        row.get("match_url") for row in protected_response.json()
+        if isinstance(row, dict) and row.get("match_url")
+    }
     rows = []
+    skipped_manual = 0
     for match in matches:
         match_url = (match.get("match_url") or "").strip()
         if not match_url:
+            continue
+        if match_url in protected:
+            skipped_manual += 1
             continue
         rows.append({
             "match_url": match_url,
@@ -308,6 +327,7 @@ def _save_fixtures(matches):
             "status": match.get("status", "Terjadwal"),
             "matchweek": match.get("matchweek"),
             "source": "ileague",
+            "manual_override": False,
         })
     if not rows:
         return 0
@@ -322,12 +342,57 @@ def _save_fixtures(matches):
     return len(rows)
 
 
+def _upsert_admin_fixture(match_url, values):
+    """Insert or update one fixture with a persistent administrator override."""
+    config = _supabase_config()
+    if not config:
+        raise RuntimeError("Konfigurasi Supabase belum tersedia.")
+    url, key, table = config
+    row = {
+        "match_url": match_url,
+        "raw": f"{values.get('home', '')} vs {values.get('away', '')}".strip(),
+        "source": "admin",
+        "manual_override": True,
+    }
+    row.update(values)
+    if row.get("home") and row.get("away"):
+        row["opponent"] = row["away"] if "PERSIBO" in row["home"].upper() else row["home"]
+    if row.get("date_iso"):
+        try:
+            dt = datetime.strptime(row["date_iso"], "%Y-%m-%d")
+            days = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"]
+            months = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
+            row["date"] = f"{days[dt.weekday()]}, {dt.day} {months[dt.month - 1]} {dt.year}"
+        except ValueError:
+            pass
+    response = requests.post(
+        f"{url}/rest/v1/{table}",
+        headers=_supabase_headers(key, "resolution=merge-duplicates,return=minimal"),
+        params={"on_conflict": "match_url"},
+        json=[row],
+        timeout=15,
+    )
+    response.raise_for_status()
+
+
 def sync_persibo_fixtures():
     """Fetch source and persist any observed rows; never clear the archive."""
     result = _fetch_persibo_fixtures()
     if result.get("matches") and not result.get("error"):
         try:
+            protected_config = _supabase_config()
+            protected_count = 0
+            if protected_config:
+                url, key, table = protected_config
+                protected_response = requests.get(
+                    f"{url}/rest/v1/{table}", headers=_supabase_headers(key),
+                    params={"select": "match_url", "manual_override": "eq.true", "limit": "2000"}, timeout=12,
+                )
+                protected_response.raise_for_status()
+                protected_urls = {r.get("match_url") for r in protected_response.json() if isinstance(r, dict)}
+                protected_count = sum(1 for m in result["matches"] if m.get("match_url") in protected_urls)
             result["saved_count"] = _save_fixtures(result["matches"])
+            result["skipped_manual"] = protected_count
             result["storage"] = "supabase" if _supabase_config() else "memory-only"
         except requests.RequestException as exc:
             result["storage_error"] = str(exc)[:240]
@@ -335,30 +400,36 @@ def sync_persibo_fixtures():
 
 
 def _get_persibo_fixtures():
-    """Prefer the permanent archive; scrape and seed it only when it is empty."""
+    """Serve the permanent archive; source scraping is initiated by an admin only."""
     global _FIXTURES_CACHE, _FIXTURES_CACHE_AT
 
     if _supabase_config():
         try:
             saved = _load_saved_fixtures()
-            if saved and saved.get("matches"):
-                return saved
-        except requests.RequestException:
-            # Continue to the best available source/cache if Supabase is temporarily down.
-            pass
+            # An empty archive is still authoritative: public visits must not
+            # trigger an implicit iLeague scrape in manual-sync mode.
+            return saved or {
+                "matches": [], "source": ILEAGUE_SEASON_URL,
+                "updated": "", "error": "Arsip pertandingan belum diisi oleh admin.",
+                "storage": "supabase", "archived": True,
+            }
+        except requests.RequestException as exc:
+            return {
+                "matches": [], "source": ILEAGUE_SEASON_URL,
+                "updated": "", "error": "Arsip Supabase sementara tidak dapat diakses.",
+                "detail": str(exc)[:160], "storage": "supabase", "archived": True,
+            }
 
+    # Legacy fallback when Supabase has not yet been configured.
     now = time.monotonic()
     with _FIXTURES_CACHE_LOCK:
         if _FIXTURES_CACHE is not None and now - _FIXTURES_CACHE_AT < _FIXTURES_CACHE_TTL:
             return deepcopy(_FIXTURES_CACHE)
-
-        result = sync_persibo_fixtures()
+        result = _fetch_persibo_fixtures()
         if result.get("matches") and not result.get("error"):
             _FIXTURES_CACHE = deepcopy(result)
             _FIXTURES_CACHE_AT = time.monotonic()
             return result
-
-        # If source is empty/unavailable, return any previously cached successful snapshot.
         if _FIXTURES_CACHE is not None:
             fallback = deepcopy(_FIXTURES_CACHE)
             fallback["error"] = result.get("error") or "Sumber jadwal sementara tidak tersedia."
