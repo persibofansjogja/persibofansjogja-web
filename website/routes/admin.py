@@ -175,8 +175,18 @@ def fixtures_admin_sync():
 def fixtures_auto_sync():
     """Authenticated machine endpoint called by GitHub Actions."""
     expected = os.getenv("GITHUB_SYNC_TOKEN", "").strip()
-    supplied = request.headers.get("Authorization", "")
-    if not expected or not hmac.compare_digest(supplied, f"Bearer {expected}"):
+    authorization = request.headers.get("Authorization", "").strip()
+    scheme, separator, supplied = authorization.partition(" ")
+    supplied = supplied.strip() if separator and scheme.lower() == "bearer" else ""
+
+    # Keep missing server configuration distinct from a bad caller token.
+    # Never log or return either secret value.
+    if not expected:
+        logger.error("Auto-sync rejected: GITHUB_SYNC_TOKEN is not configured in this Vercel deployment.")
+        return jsonify(error="Konfigurasi token sinkronisasi belum tersedia di environment deployment."), 503
+    if not supplied or not hmac.compare_digest(supplied, expected):
+        logger.warning("Auto-sync rejected: bearer token mismatch (authorization_header_present=%s).",
+                       bool(authorization))
         return jsonify(error="Unauthorized"), 401
     if not _supabase_config():
         return jsonify(error="Konfigurasi Supabase arsip belum lengkap."), 503
