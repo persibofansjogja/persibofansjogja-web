@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>Arsip Jadwal & Hasil | Admin Persibo Fans Jogja</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;padding:24px 14px;background:#f3f5f7;color:#17212b;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+    main{max-width:1120px;margin:2vh auto}.panel{background:#fff;border:1px solid #e1e6eb;border-radius:14px;padding:20px;margin:15px 0;box-shadow:0 5px 22px #1525360a}
+    h1{font-size:25px;margin:0 0 7px}h2{font-size:18px;margin:0 0 12px}.muted{color:#5b6875;line-height:1.5}.toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    button{border:0;border-radius:8px;padding:11px 15px;background:#173f70;color:white;font:inherit;font-weight:650;cursor:pointer}button.secondary{background:#e9eef3;color:#243444}button:disabled{opacity:.55;cursor:wait}
+    .status{padding:12px;border-radius:8px;background:#eef2f6;margin-top:14px;white-space:pre-wrap;overflow-wrap:anywhere}.status.ok{background:#e9f7ee;color:#176238}.status.err{background:#fff0ef;color:#982d26}
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}label{display:block;font-weight:650;font-size:13px;margin:10px 0 5px}input,select{width:100%;padding:10px 11px;border:1px solid #cbd3dc;border-radius:8px;font:inherit;background:#fff}
+    .form-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.table-wrap{overflow:auto}table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;padding:10px;border-bottom:1px solid #e7ebef;vertical-align:top}td{max-width:260px;overflow-wrap:anywhere}.row-btn{padding:7px 10px;font-size:12px}.pill{display:inline-block;padding:3px 8px;border-radius:20px;background:#edf2f7;font-size:11px}.hint{font-size:12px}.topline{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    @media(max-width:680px){.grid{grid-template-columns:1fr}.panel{padding:16px}h1{font-size:21px}}
+  </style>
+</head>
+<body>
+<main>
+  <section class="panel">
+    <div class="toolbar">
+      <div><h1>Arsip Jadwal & Hasil Persibo</h1><p class="muted">Ambil pembaruan dari iLeague saat admin menghendaki. Data tersimpan di Supabase; data yang tidak lagi muncul di iLeague tidak dihapus.</p></div>
+      <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="secondary" type="submit">Keluar Admin</button></form>
+    </div>
+    <div class="topline"><button id="sync">Ambil Data Terbaru dari iLeague</button><button id="reload" class="secondary">Muat Arsip</button><span id="last-updated" class="muted hint"></span></div>
+    <div id="status" class="status" role="status" aria-live="polite">Siap. Sinkronisasi hanya berjalan ketika tombol ditekan.</div>
+  </section>
+
+  <section class="panel">
+    <h2 id="form-title">Tambah Pertandingan Manual</h2>
+    <p class="muted hint">Isi data pertandingan atau pilih tombol Edit pada tabel. Data manual ditandai sebagai override agar tidak tertimpa sinkronisasi iLeague berikutnya.</p>
+    <form id="fixture-form">
+      <input type="hidden" id="match_url">
+      <div class="grid">
+        <div><label for="home">Tim kandang *</label><input id="home" required maxlength="200" placeholder="PERSIBO BOJONEGORO"></div>
+        <div><label for="away">Tim tandang *</label><input id="away" required maxlength="200" placeholder="Nama lawan"></div>
+        <div><label for="date_iso">Tanggal *</label><input id="date_iso" type="date" required></div>
+        <div><label for="time">Jam (WIB)</label><input id="time" type="time"></div>
+        <div><label for="venue">Stadion</label><input id="venue" maxlength="200"></div>
+        <div><label for="score">Skor akhir</label><input id="score" maxlength="30" placeholder="2 - 1"></div>
+        <div><label for="status-field">Status</label><select id="status-field"><option>Terjadwal</option><option>Selesai</option><option>Ditunda</option><option>Dibatalkan</option></select></div>
+        <div><label for="matchweek">Pekan</label><input id="matchweek" type="number" min="1" max="99"></div>
+      </div>
+      <div class="form-actions"><button type="submit" id="save">Simpan Pertandingan</button><button type="button" id="cancel" class="secondary" hidden>Batal Edit</button></div>
+    </form>
+  </section>
+
+  <section class="panel">
+    <div class="toolbar"><div><h2>Arsip Tersimpan</h2><p class="muted hint">Edit akan membuat override manual. Tidak tersedia tombol hapus agar arsip tidak terhapus tanpa sengaja.</p></div><strong id="count">0 pertandingan</strong></div>
+    <div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Pertandingan</th><th>Skor</th><th>Status</th><th>Sumber</th><th>Aksi</th></tr></thead><tbody id="rows"><tr><td colspan="6" class="muted">Memuat arsip…</td></tr></tbody></table></div>
+  </section>
+</main>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const csrf = document.querySelector('meta[name="csrf-token"]').content;
+  let fixtures = [];
+  const fields = ['home','away','date_iso','time','venue','score','matchweek'];
+  function say(message, type=''){ $('status').className='status '+type; $('status').textContent=message; }
+  async function api(path, method='GET', body=null){
+    const response = await fetch(path, {method, cache:'no-store', headers:{'Accept':'application/json', ...(body?{'Content-Type':'application/json'}:{}), ...(method==='GET'?{}:{'X-CSRF-Token':csrf})}, body:body?JSON.stringify(body):undefined});
+    const data = await response.json().catch(()=>({}));
+    if(!response.ok) throw new Error(data.error || `Permintaan gagal (${response.status})`);
+    return data;
+  }
+  const esc = value => String(value ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function render(){
+    $('count').textContent=`${fixtures.length} pertandingan`;
+    const body=$('rows'); body.replaceChildren();
+    if(!fixtures.length){const tr=document.createElement('tr');tr.innerHTML='<td colspan="6" class="muted">Belum ada arsip. Tekan Ambil Data Terbaru dari iLeague atau tambahkan pertandingan manual.</td>';body.append(tr);return;}
+    fixtures.forEach(item=>{
+      const tr=document.createElement('tr');
+      const date=item.date || item.date_iso || '—';
+      const match=`${item.home || '—'} vs ${item.away || '—'}`;
+      tr.innerHTML=`<td>${esc(date)}${item.time?`<br>${esc(item.time)} WIB`:''}</td><td><strong>${esc(match)}</strong>${item.venue?`<br><span class="muted">${esc(item.venue)}</span>`:''}</td><td>${esc(item.score || 'VS')}</td><td>${esc(item.status || '—')}</td><td><span class="pill">${item.manual_override?'Manual admin':'iLeague'}</span></td><td><button class="row-btn secondary" type="button">Edit</button></td>`;
+      tr.querySelector('button').addEventListener('click',()=>edit(item)); body.append(tr);
+    });
+  }
+  async function load(){
+    try{say('Memuat arsip Supabase…');const data=await api('/fixtures-admin/api');fixtures=data.matches||[];$('last-updated').textContent=data.updated?`Terakhir dibaca: ${data.updated}`:'';render();say('Arsip berhasil dimuat.','ok');}
+    catch(error){say(error.message,'err');}
+  }
+  function edit(item){
+    $('form-title').textContent='Edit Pertandingan';$('match_url').value=item.match_url||'';
+    fields.forEach(field=>$(field).value=item[field]??'');$('status-field').value=item.status||'Terjadwal';
+    $('save').textContent='Simpan Perubahan';$('cancel').hidden=false;window.scrollTo({top:0,behavior:'smooth'});
+  }
+  function reset(){ $('fixture-form').reset();$('match_url').value='';$('form-title').textContent='Tambah Pertandingan Manual';$('save').textContent='Simpan Pertandingan';$('cancel').hidden=true; }
+  $('fixture-form').addEventListener('submit',async event=>{
+    event.preventDefault();
+    const data={};fields.forEach(field=>data[field]=$(field).value);data.status=$('status-field').value;
+    if(data.matchweek==='') delete data.matchweek;
+    const key=$('match_url').value; const method=key?'PATCH':'POST';
+    try{say('Menyimpan pertandingan…');await api('/fixtures-admin/api',method,{match_url:key,data});say('Pertandingan berhasil disimpan sebagai arsip.','ok');reset();await load();}
+    catch(error){say(error.message,'err');}
+  });
+  $('cancel').addEventListener('click',reset);
+  $('reload').addEventListener('click',load);
+  $('sync').addEventListener('click',async()=>{
+    if(!confirm('Ambil data terbaru dari iLeague dan simpan ke Supabase? Arsip lama tidak akan dihapus.')) return;
+    $('sync').disabled=true;say('Mengambil data dari iLeague dan menyimpan arsip…');
+    try{const result=await api('/fixtures-admin/sync','POST',{});say(`${result.message}\nDitemukan: ${result.found}\nDisimpan/diperbarui: ${result.saved}\nDilewati karena override manual: ${result.skipped_manual||0}`,'ok');await load();}
+    catch(error){say(`${error.message}\nArsip lama tetap dipertahankan.`,'err');}
+    finally{$('sync').disabled=false;}
+  });
+  load();
+})();
+</script>
+</body>
+</html>
