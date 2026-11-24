@@ -6,6 +6,9 @@
       "use": "@vercel/python"
     }
   ],
+  "crons": [
+    { "path": "/api/cron/sync-fixtures", "schedule": "*/15 * * * *" }
+  ],
   "routes": [
     {
       "src": "/(.*)",
