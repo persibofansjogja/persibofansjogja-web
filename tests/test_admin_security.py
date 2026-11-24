@@ -90,7 +90,7 @@ def test_crud_api_rejects_invalid_table_name_before_network(client, monkeypatch)
     monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
     monkeypatch.setenv("SUPABASE_KEY", "test-key")
     monkeypatch.setenv("SUPABASE_TEST_TABLE", "table;drop table users")
-    with client.session_transaction() as session:
+    with client.session_transaction(base_url=f"http://{ADMIN_HOST}") as session:
         csrf = session["csrf_token"]
     response = client.post(
         "/test-crud/api",
@@ -114,7 +114,7 @@ def test_crud_api_is_not_exposed_on_public_host(client):
 
 def test_admin_logout_requires_csrf_and_clears_session(client, monkeypatch):
     _login(client, monkeypatch)
-    with client.session_transaction() as session:
+    with client.session_transaction(base_url=f"http://{ADMIN_HOST}") as session:
         csrf = session["csrf_token"]
     blocked = client.post("/logout", headers={"Host": ADMIN_HOST})
     assert blocked.status_code == 400
