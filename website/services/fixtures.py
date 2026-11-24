@@ -1,7 +1,10 @@
 """iLeague fixture retrieval and normalization services."""
 
 import re
+import time
+from copy import deepcopy
 from datetime import datetime
+from threading import Lock
 from urllib.parse import urljoin
 
 import requests
@@ -11,6 +14,14 @@ from bs4 import BeautifulSoup
 ILEAGUE_SEASON_URL = "https://ileague.id/fixtures/index/LIGA_NUSANTARA_2026-27/3/0"
 ILEAGUE_SUMMARY_URL = "https://ileague.id/matchweek_summary/index/LIGA_NUSANTARA_2026-27"
 ILEAGUE_RESULT_PREFIX = "https://ileague.id/result/detail/"
+
+# Cache proses lokal: membantu request berulang pada instance Vercel yang sama.
+# Cache ini bersifat best-effort; serverless cold start dapat memulai cache baru.
+_FIXTURES_CACHE_TTL = 300
+_FIXTURES_CACHE = None
+_FIXTURES_CACHE_AT = 0.0
+_FIXTURES_CACHE_LOCK = Lock()
+
 
 def _ileague_get(url):
     response = requests.get(
@@ -52,7 +63,7 @@ def _fixture_teams_from_url(url):
     except (ValueError, IndexError):
         return "", ""
 
-def _get_persibo_fixtures():
+def _fetch_persibo_fixtures():
     """Ambil seluruh jadwal Persibo dari semua pekan Liga Nusantara."""
     base = "https://ileague.id/fixtures/index/LIGA_NUSANTARA_2026-27"
     result = {
@@ -212,6 +223,28 @@ def _get_persibo_fixtures():
         result["error"] = "Halaman jadwal iLeague belum dapat dimuat."
         result["detail"] = str(exc)[:240]
     return result
+
+
+def _get_persibo_fixtures():
+    """Ambil jadwal dari cache 5 menit sebelum melakukan scraping ulang."""
+    global _FIXTURES_CACHE, _FIXTURES_CACHE_AT
+
+    now = time.monotonic()
+    with _FIXTURES_CACHE_LOCK:
+        if (
+            _FIXTURES_CACHE is not None
+            and now - _FIXTURES_CACHE_AT < _FIXTURES_CACHE_TTL
+        ):
+            return deepcopy(_FIXTURES_CACHE)
+
+        result = _fetch_persibo_fixtures()
+
+        # Jangan cache respons kosong/error agar kegagalan sumber tidak menetap.
+        if result.get("matches") and not result.get("error"):
+            _FIXTURES_CACHE = deepcopy(result)
+            _FIXTURES_CACHE_AT = time.monotonic()
+
+        return result
 
 
 def _ileague_fixtures_diagnostics():
