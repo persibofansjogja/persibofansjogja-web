@@ -62,7 +62,10 @@
   async function api(path, method='GET', body=null){
     const response = await fetch(path, {method, cache:'no-store', headers:{'Accept':'application/json', ...(body?{'Content-Type':'application/json'}:{}), ...(method==='GET'?{}:{'X-CSRF-Token':csrf})}, body:body?JSON.stringify(body):undefined});
     const data = await response.json().catch(()=>({}));
-    if(!response.ok) throw new Error(data.error || `Permintaan gagal (${response.status})`);
+    if(!response.ok) {
+      const detail = data.details ? `\nDetail teknis: ${data.details}` : '';
+      throw new Error((data.error || `Permintaan gagal (${response.status})`) + detail);
+    }
     return data;
   }
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
