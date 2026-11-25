@@ -14,7 +14,10 @@ from ..services.fixtures import (
     fixture_auto_sync_due, record_fixture_sync_state,
 )
 from ..services.supabase_crud import handle_test_crud
-from ..utils.security import csrf_token, valid_csrf_token
+from ..utils.security import (
+    RateLimitStoreError, csrf_token, valid_csrf_token,
+    login_rate_limit_status, record_failed_login,
+)
 
 admin_bp = Blueprint("admin", __name__)
 logger = logging.getLogger(__name__)
@@ -45,12 +48,35 @@ def admin_home():
         supplied_user, supplied_password = request.form.get("username", ""), request.form.get("password", "")
         if not username or not password or not secret:
             return render_template("admin_login.html", error="Konfigurasi login belum lengkap. Hubungi administrator.", csrf_token=csrf_token()), 503
+        try:
+            blocked, retry_after = login_rate_limit_status(supplied_user)
+        except RateLimitStoreError:
+            logger.exception("Login rate-limit store unavailable; refusing authentication.")
+            return render_template("admin_login.html", error="Layanan login sementara tidak tersedia. Coba beberapa saat lagi.", csrf_token=csrf_token()), 503
+        if blocked:
+            response = render_template("admin_login.html", error="Terlalu banyak percobaan login. Silakan coba lagi setelah 15 menit.", csrf_token=csrf_token())
+            from flask import make_response
+            limited = make_response(response, 429)
+            limited.headers["Retry-After"] = str(retry_after)
+            return limited
         if hmac.compare_digest(supplied_user, username) and hmac.compare_digest(supplied_password, password):
             session.clear()
             session["admin_authenticated"] = True
             session.permanent = True
             csrf_token()
             return redirect("/")
+        try:
+            record_failed_login(supplied_user)
+            blocked, retry_after = login_rate_limit_status(supplied_user)
+        except RateLimitStoreError:
+            logger.exception("Could not record failed login in rate-limit store.")
+            return render_template("admin_login.html", error="Layanan login sementara tidak tersedia. Coba beberapa saat lagi.", csrf_token=csrf_token()), 503
+        if blocked:
+            response = render_template("admin_login.html", error="Terlalu banyak percobaan login. Silakan coba lagi setelah 15 menit.", csrf_token=csrf_token())
+            from flask import make_response
+            limited = make_response(response, 429)
+            limited.headers["Retry-After"] = str(retry_after)
+            return limited
         return render_template("admin_login.html", error="Username atau password salah.", csrf_token=csrf_token()), 401
     if session.get("admin_authenticated"):
         return render_template("fixtures_admin.html", csrf_token=csrf_token())
