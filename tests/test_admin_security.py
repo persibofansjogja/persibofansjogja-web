@@ -142,3 +142,34 @@ def test_fixture_admin_api_is_not_exposed_on_public_host(client):
         headers={"Host": "www.persibofansjogja.web.id"},
     )
     assert response.status_code == 404
+
+
+def test_admin_login_is_rate_limited_after_five_failed_attempts(client, monkeypatch):
+    from website.utils import security
+
+    security._MEMORY_BUCKETS.clear()
+    monkeypatch.delenv("VERCEL", raising=False)
+    monkeypatch.delenv("FLASK_ENV", raising=False)
+    monkeypatch.delenv("UPSTASH_REDIS_REST_URL", raising=False)
+    monkeypatch.delenv("UPSTASH_REDIS_REST_TOKEN", raising=False)
+    monkeypatch.setenv("ADMIN_USERNAME", "pytest-admin")
+    monkeypatch.setenv("ADMIN_PASSWORD", "pytest-password")
+    monkeypatch.setenv("FLASK_SECRET_KEY", "test-only-secret-key-not-for-production")
+
+    for _ in range(4):
+        page = client.get("/", headers={"Host": ADMIN_HOST})
+        response = client.post(
+            "/", headers={"Host": ADMIN_HOST},
+            data={"username": "pytest-admin", "password": "wrong-password",
+                  "csrf_token": _csrf_from(page)},
+        )
+        assert response.status_code == 401
+
+    page = client.get("/", headers={"Host": ADMIN_HOST})
+    fifth = client.post(
+        "/", headers={"Host": ADMIN_HOST},
+        data={"username": "pytest-admin", "password": "wrong-password",
+              "csrf_token": _csrf_from(page)},
+    )
+    assert fifth.status_code == 429
+    assert int(fifth.headers["Retry-After"]) > 0
