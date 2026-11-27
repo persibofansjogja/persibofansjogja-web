@@ -7,8 +7,7 @@
 
   if (!list || !status || !refresh) return;
 
-  // The server embeds the archive in the initial HTML. Do not fetch or
-  // re-render on startup: the first paint already contains the match cards.
+  // The initial HTML already contains archived matches. No startup fetch.
   let matches = [];
   try {
     matches = initialData ? JSON.parse(initialData.textContent || '[]') : [];
@@ -30,13 +29,13 @@
     }
 
     list.innerHTML = visible.map((m, i) => {
-      const time = m.time || m.kickoff || '';
-      const venue = m.venue || m.stadium || '';
+      const time = m.time || '';
+      const venue = m.venue || '';
       const details = [
         time ? `<span class="fixture-detail"><span aria-hidden="true">◷</span> ${esc(time)} WIB</span>` : '',
         venue ? `<span class="fixture-detail"><span aria-hidden="true">⌖</span> ${esc(venue)}</span>` : ''
       ].filter(Boolean).join('');
-      const description = m.raw || m.opponent || 'Informasi pertandingan belum tersedia';
+      const description = m.raw || `${m.home || ''} vs ${m.away || ''}`;
 
       return `<article class="fixture-card">
         <div class="fixture-number">${String(i + 1).padStart(2, '0')}</div>
@@ -73,17 +72,12 @@
         button.classList.toggle('active', button.dataset.filter === 'all');
       });
 
-      if (updated) {
-        updated.textContent = data.updated ? `Arsip diperbarui ${data.updated}` : '';
-      }
-
+      if (updated) updated.textContent = data.updated ? `Arsip diperbarui ${data.updated}` : '';
       status.hidden = matches.length > 0;
-      if (!matches.length) {
-        status.textContent = data.error || 'Belum ada data pertandingan yang tersimpan.';
-      }
+      if (!matches.length) status.textContent = data.error || 'Belum ada data pertandingan yang tersimpan.';
       render();
     } catch (_) {
-      // Keep the server-rendered/current cards visible if refresh fails.
+      // Keep the server-rendered data visible if the refresh request fails.
       status.textContent = 'Pembaruan gagal. Data yang sedang ditampilkan tetap dipertahankan.';
       status.hidden = matches.length > 0;
     } finally {
