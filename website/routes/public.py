@@ -69,7 +69,7 @@ def _build_fixture_schema(fixtures):
         if match_url.startswith("https://") or match_url.startswith("http://"):
             event["url"] = match_url
         else:
-            event["url"] = "https://www.persibofansjogja.web.id/jadwal"
+            event["url"] = "https://persibofansjogja.web.id/jadwal"
 
         events.append(event)
 
@@ -78,7 +78,7 @@ def _build_fixture_schema(fixtures):
         "@type": "CollectionPage",
         "name": "Jadwal dan Hasil Pertandingan Persibo Bojonegoro",
         "description": "Jadwal dan hasil pertandingan Persibo Bojonegoro di Liga Nusantara.",
-        "url": "https://www.persibofansjogja.web.id/jadwal",
+        "url": "https://persibofansjogja.web.id/jadwal",
         "inLanguage": "id-ID",
         "mainEntity": {
             "@type": "ItemList",
@@ -119,7 +119,7 @@ def berita():
 
 @public_bp.get("/robots.txt")
 def robots():
-    body = """User-agent: *\nAllow: /\n\nSitemap: https://www.persibofansjogja.web.id/sitemap.xml\n"""
+    body = """User-agent: *\nAllow: /\n\nSitemap: https://persibofansjogja.web.id/sitemap.xml\n"""
     return Response(body, mimetype="text/plain")
 
 
@@ -127,9 +127,9 @@ def robots():
 def sitemap():
     body = """<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://www.persibofansjogja.web.id/</loc><changefreq>monthly</changefreq><priority>1.0</priority></url>
-  <url><loc>https://www.persibofansjogja.web.id/berita</loc><changefreq>hourly</changefreq><priority>0.8</priority></url>
-  <url><loc>https://www.persibofansjogja.web.id/jadwal</loc><changefreq>daily</changefreq><priority>0.8</priority></url>
+  <url><loc>https://persibofansjogja.web.id/</loc><changefreq>monthly</changefreq><priority>1.0</priority></url>
+  <url><loc>https://persibofansjogja.web.id/berita</loc><changefreq>hourly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://persibofansjogja.web.id/jadwal</loc><changefreq>daily</changefreq><priority>0.8</priority></url>
 </urlset>
 """
     return Response(body, mimetype="application/xml")
