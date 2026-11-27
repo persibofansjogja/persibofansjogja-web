@@ -17,7 +17,10 @@ def home():
 
 @public_bp.get("/jadwal")
 def jadwal():
-    return render_template("jadwal.html")
+    # Render the archived fixtures on the server so the first HTML response
+    # already contains the schedule/results (no client-side loading spinner).
+    fixtures = _get_persibo_fixtures()
+    return render_template("jadwal.html", fixtures=fixtures)
 
 
 @public_bp.get("/api/jadwal-persibo")
