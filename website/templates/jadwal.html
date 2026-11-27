@@ -5,7 +5,7 @@
   <meta name="description" content="Jadwal dan hasil pertandingan Persibo Bojonegoro di Liga Nusantara musim 2026/27.">
 {% endblock %}
 {% block head_scripts %}
-  <script src="{{ url_for('static', filename='js/fixtures.js') }}?v=20261120-statusfix" defer></script>
+  <script src="{{ url_for('static', filename='js/fixtures.js') }}?v=20261127-ssr" defer></script>
 {% endblock %}
 {% block content %}
 <main class="fixtures-page">
@@ -20,9 +20,39 @@
     <div class="fixture-filters" role="group" aria-label="Filter pertandingan">
       <button class="fixture-filter active" data-filter="all">SEMUA</button><button class="fixture-filter" data-filter="Selesai">HASIL</button><button class="fixture-filter" data-filter="Terjadwal">JADWAL</button>
     </div>
-    <div id="fixture-status" class="fixture-status" aria-live="polite"><span class="loading-spinner"></span> Mengambil data dari iLeague…</div>
-    <div id="fixture-list" class="fixture-list"></div>
-    <div class="fixture-source">SUMBER DATA: <a href="https://ileague.id/home/index/LIGA_NUSANTARA_2026-27" target="_blank" rel="noopener noreferrer">iLeague — Liga Nusantara 2026/27 ↗</a><span id="fixture-updated"></span></div>
+    {% set fixture_matches = fixtures.matches|default([], true) %}
+    <div id="fixture-status" class="fixture-status" aria-live="polite" {% if fixture_matches %}hidden{% endif %}>
+      {{ fixtures.error or 'Belum ada data pertandingan yang tersimpan.' }}
+    </div>
+    <div id="fixture-list" class="fixture-list">
+      {% if fixture_matches %}
+        {% for m in fixture_matches %}
+          <article class="fixture-card">
+            <div class="fixture-number">{{ "%02d"|format(loop.index) }}</div>
+            <div class="fixture-main">
+              <div class="fixture-meta">
+                <span>{{ m.date or 'Tanggal belum tersedia' }}</span>
+                <span class="fixture-status-tag {{ 'done' if m.status == 'Selesai' else '' }}">{{ m.status or 'Info' }}</span>
+              </div>
+              <div class="fixture-raw">{{ m.raw or m.opponent or 'Informasi pertandingan belum tersedia' }}</div>
+              {% set match_time = m.time or m.kickoff or '' %}
+              {% set match_venue = m.venue or m.stadium or '' %}
+              {% if match_time or match_venue %}
+                <div class="fixture-details">
+                  {% if match_time %}<span class="fixture-detail"><span aria-hidden="true">◷</span> {{ match_time }} WIB</span>{% endif %}
+                  {% if match_venue %}<span class="fixture-detail"><span aria-hidden="true">⌖</span> {{ match_venue }}</span>{% endif %}
+                </div>
+              {% endif %}
+            </div>
+            {% if m.score %}<div class="fixture-score">{{ m.score }}</div>{% else %}<div class="fixture-vs">VS</div>{% endif %}
+          </article>
+        {% endfor %}
+      {% else %}
+        <div class="fixture-empty"><span>✳</span><h3>BELUM ADA PERTANDINGAN</h3><p>Data pertandingan belum tersedia saat ini.</p></div>
+      {% endif %}
+    </div>
+    <script id="fixture-data" type="application/json">{{ fixture_matches|tojson }}</script>
+    <div class="fixture-source">SUMBER DATA: <a href="https://ileague.id/home/index/LIGA_NUSANTARA_2026-27" target="_blank" rel="noopener noreferrer">iLeague — Liga Nusantara 2026/27 ↗</a><span id="fixture-updated">{% if fixtures.updated %}Arsip diperbarui {{ fixtures.updated }}{% endif %}</span></div>
     <div class="fixture-note">Informasi pertandingan mengikuti pembaruan dari penyelenggara. Jika struktur data iLeague berubah atau server sumber sedang tidak tersedia, kunjungi laman resmi melalui tautan di atas.</div>
   </section>
 </main>
