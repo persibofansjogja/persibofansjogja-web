@@ -28,10 +28,37 @@ def test_news_page_renders_without_external_feed(client, monkeypatch):
     assert b"BERITA" in response.data
 
 
-def test_fixtures_page_renders(client):
+def test_fixtures_page_renders_server_side_and_seo(client, monkeypatch):
+    monkeypatch.setattr(
+        public,
+        "_get_persibo_fixtures",
+        lambda: {
+            "matches": [{
+                "date": "Jumat, 27 November 2026",
+                "date_iso": "2026-11-27",
+                "time": "15:00",
+                "home": "PERSIBO BOJONEGORO",
+                "away": "GRESIK UNITED FC",
+                "raw": "PERSIBO BOJONEGORO vs GRESIK UNITED FC",
+                "venue": "Stadion Letjen H. Soedirman",
+                "score": "2 - 1",
+                "status": "Selesai",
+                "match_url": "https://ileague.id/result/detail/example",
+            }],
+            "updated": "2026-11-27T10:00:00+07:00",
+            "error": None,
+        },
+    )
     response = client.get("/jadwal")
+    html = response.get_data(as_text=True)
     assert response.status_code == 200
-    assert b"fixture-list" in response.data
+    assert "PERSIBO BOJONEGORO vs GRESIK UNITED FC" in html
+    assert 'rel="canonical"' in html
+    assert 'name="robots" content="index, follow' in html
+    assert 'property="og:title"' in html
+    assert 'application/ld+json' in html
+    assert "SportsEvent" in html
+    assert "loading-spinner" not in html
 
 
 def test_robots_and_sitemap(client):
