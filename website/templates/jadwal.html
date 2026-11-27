@@ -1,11 +1,25 @@
 {% extends "base.html" %}
 {% set page_key = 'fixtures' %}
-{% block title %}Jadwal &amp; Hasil Persibo Bojonegoro 2026/27 | Persibo Fans Jogja{% endblock %}
+{% block title %}Jadwal dan Hasil Persibo Bojonegoro 2026/27 | Persibo Fans Jogja{% endblock %}
 {% block head_meta %}
-  <meta name="description" content="Jadwal dan hasil pertandingan Persibo Bojonegoro di Liga Nusantara musim 2026/27.">
+  <meta name="description" content="Lihat jadwal pertandingan, hasil terbaru, skor akhir, tanggal, dan stadion Persibo Bojonegoro di Liga Nusantara musim 2026/27. Diperbarui dari arsip pertandingan iLeague.">
+  <link rel="canonical" href="https://www.persibofansjogja.web.id/jadwal">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Persibo Fans Jogja">
+  <meta property="og:title" content="Jadwal dan Hasil Persibo Bojonegoro 2026/27">
+  <meta property="og:description" content="Jadwal pertandingan, hasil terbaru, dan skor Persibo Bojonegoro di Liga Nusantara musim 2026/27.">
+  <meta property="og:url" content="https://www.persibofansjogja.web.id/jadwal">
+  <meta property="og:image" content="https://www.persibofansjogja.web.id/static/images/LogoPFJ.webp">
+  <meta property="og:image:alt" content="Logo Persibo Fans Jogja">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Jadwal dan Hasil Persibo Bojonegoro 2026/27">
+  <meta name="twitter:description" content="Jadwal pertandingan dan hasil Persibo Bojonegoro di Liga Nusantara.">
+  <meta name="twitter:image" content="https://www.persibofansjogja.web.id/static/images/LogoPFJ.webp">
+  <script type="application/ld+json">{{ fixture_schema|tojson }}</script>
 {% endblock %}
 {% block head_scripts %}
-  <script src="{{ url_for('static', filename='js/fixtures.js') }}?v=20261127-ssr" defer></script>
+  <script src="{{ url_for('static', filename='js/fixtures.js') }}?v=20261127-seo-ssr" defer></script>
 {% endblock %}
 {% block content %}
 <main class="fixtures-page">
@@ -20,7 +34,6 @@
     <div class="fixture-filters" role="group" aria-label="Filter pertandingan">
       <button class="fixture-filter active" data-filter="all">SEMUA</button><button class="fixture-filter" data-filter="Selesai">HASIL</button><button class="fixture-filter" data-filter="Terjadwal">JADWAL</button>
     </div>
-    {% set fixture_matches = fixtures.matches|default([], true) %}
     <div id="fixture-status" class="fixture-status" aria-live="polite" {% if fixture_matches %}hidden{% endif %}>
       {{ fixtures.error or 'Belum ada data pertandingan yang tersimpan.' }}
     </div>
@@ -34,13 +47,11 @@
                 <span>{{ m.date or 'Tanggal belum tersedia' }}</span>
                 <span class="fixture-status-tag {{ 'done' if m.status == 'Selesai' else '' }}">{{ m.status or 'Info' }}</span>
               </div>
-              <div class="fixture-raw">{{ m.raw or m.opponent or 'Informasi pertandingan belum tersedia' }}</div>
-              {% set match_time = m.time or m.kickoff or '' %}
-              {% set match_venue = m.venue or m.stadium or '' %}
-              {% if match_time or match_venue %}
+              <div class="fixture-raw">{{ m.raw or ((m.home or '') ~ ' vs ' ~ (m.away or '')) }}</div>
+              {% if m.time or m.venue %}
                 <div class="fixture-details">
-                  {% if match_time %}<span class="fixture-detail"><span aria-hidden="true">◷</span> {{ match_time }} WIB</span>{% endif %}
-                  {% if match_venue %}<span class="fixture-detail"><span aria-hidden="true">⌖</span> {{ match_venue }}</span>{% endif %}
+                  {% if m.time %}<span class="fixture-detail"><span aria-hidden="true">◷</span> {{ m.time }} WIB</span>{% endif %}
+                  {% if m.venue %}<span class="fixture-detail"><span aria-hidden="true">⌖</span> {{ m.venue }}</span>{% endif %}
                 </div>
               {% endif %}
             </div>
